@@ -1,0 +1,21 @@
+CC = gcc
+LD = gcc
+CFLAGS = -g -Wall -I/usr/local/include
+LDFLAGS = -L/usr/local/lib/event2 -L/usr/local/lib -g
+RM = /bin/rm -f
+
+LIBS = -levent_core -lyaml -lrabbitmq -ljson
+
+OBJS = logenqueue.o config.o
+PROG = logenqueue
+
+all: $(PROG)
+
+$(PROG): $(OBJS)
+		$(LD) $(LDFLAGS) $(OBJS) $(LIBS) -o $(PROG)
+
+%.o: %.c
+		$(CC) $(CFLAGS) -c $<
+
+clean:
+		$(RM) $(PROG) $(OBJS)
