@@ -97,7 +97,6 @@ got_msg(int fd, short event, void *arg)
 			return;
 		}
 		msg = strchr(buf, '>');
-		*msg = '\0';
 		msg++;
 		pri = (int)strtol(buf+1,(char **)NULL,10);
 
@@ -117,7 +116,7 @@ got_msg(int fd, short event, void *arg)
 		json_object *j_version = json_object_new_string("1.0");
 		json_object *j_host = json_object_new_string(host);
 		json_object *j_short_message = json_object_new_string(msg);
-		json_object *j_full_message = json_object_new_string(msg);
+		json_object *j_full_message = json_object_new_string(buf);
 		json_object *j_timestamp = json_object_new_double(ts);
 		json_object *j_level = json_object_new_int(severity);
 		json_object *j_facility = json_object_new_string(fac2str[facility]);
