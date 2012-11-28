@@ -123,7 +123,7 @@ got_msg(int fd, short event, void *arg)
 		flush = Z_FINISH;
 		deflate(&strm, flush);
 
-		out[strm.avail_out] = '\0';
+		out[strm.avail_out+1] = '\0';
 
 		//strm.avail_in = 0;
 		//strm.avail_out = 0;
