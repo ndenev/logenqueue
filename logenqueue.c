@@ -26,21 +26,32 @@
 
 struct  config  cfg;
 
-/*
-{
-  "version": "1.0",
-  "host": "www1",
-  "short_message": "Short message",
-  "full_message": "Backtrace here\n\nmore stuff",
-  "timestamp": 1291899928.412,
-  "level": 1,
-  "facility": "payment-backend",
-  "file": "/var/www/somefile.rb",
-  "line": 356,
-  "_user_id": 42,
-  "_something_else": "foo"
-}
-*/
+char *fac2str[] = {
+	"kernel",
+	"user-level",
+	"mail",
+	"system daemon",
+	"security/authorization",
+	"syslogd",
+	"line printer",
+	"network news",
+	"UUCP",
+	"clock",
+	"security/authorization",
+	"FTP",
+	"NTP",
+	"log audit",
+	"log alert",
+	"clock",
+	"local0",
+	"local1",
+	"local2",
+	"local3",
+	"local4",
+	"local5",
+	"local6",
+	"local7"
+};
 
 void
 got_msg(int fd, short event, void *arg)
@@ -53,7 +64,7 @@ got_msg(int fd, short event, void *arg)
 	unsigned int host_len;
 	char buf[8129];
 	int r;
-	int sev;
+	int pri;
 
 	if (event != EV_READ) {
 		fprintf(stderr, "not read event?\n");
@@ -78,7 +89,10 @@ got_msg(int fd, short event, void *arg)
 		msg = strchr(buf, '>');
 		*msg = '\0';
 		msg++;
-		sev = (int)strtol(buf+1,(char **)NULL,10);
+		pri = (int)strtol(buf+1,(char **)NULL,10);
+
+		int severity = pri & 0x07;
+		int facility = pri >> 3;
 
 		json_object * jobj = json_object_new_object();
 
@@ -87,8 +101,8 @@ got_msg(int fd, short event, void *arg)
 		json_object *j_short_message = json_object_new_string(msg);
 		json_object *j_full_message = json_object_new_string(msg);
 		json_object *j_timestamp = json_object_new_double(time(NULL));
-		json_object *j_level = json_object_new_int(sev);
-		json_object *j_facility = json_object_new_string("syslog");
+		json_object *j_level = json_object_new_int(severity);
+		json_object *j_facility = json_object_new_string(fac2str[facility]);
 		json_object *j_file = json_object_new_string("");
 		json_object *j_line = json_object_new_int(0);
 
@@ -102,11 +116,14 @@ got_msg(int fd, short event, void *arg)
 		json_object_object_add(jobj,"file", j_file);
 		json_object_object_add(jobj,"line", j_line);
 
-#define	 CHUNK	128000
+#define	 CHUNK	9216
 		int flush;
 		z_stream strm;
 		u_char in[CHUNK];
-		u_char out[CHUNK];
+		u_char out[CHUNK*2];
+
+		memset(in, 0, CHUNK);
+		memset(out, 0, CHUNK*2);
 
 		/* allocate deflate state */
 		strm.zalloc = Z_NULL;
@@ -119,20 +136,14 @@ got_msg(int fd, short event, void *arg)
 		strm.next_in = in;
 		strm.avail_out = CHUNK;
 		strm.next_out = out;
-		//flush = Z_NO_FLUSH;
 		flush = Z_FINISH;
 		deflate(&strm, flush);
 
 		out[strm.avail_out+1] = '\0';
 
-		//strm.avail_in = 0;
-		//strm.avail_out = 0;
-		//flush = Z_FINISH;
-		//deflate(&strm, flush);
-
 		(void)deflateEnd(&strm);
 
-		//printf ("The json object created: %sn",json_object_to_json_string(jobj));
+		printf ("%s\n",json_object_to_json_string(jobj));
 
 		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
@@ -142,8 +153,6 @@ got_msg(int fd, short event, void *arg)
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 				    &props, amqp_cstring_bytes(buf));
 	}
-
-	//printf("Got Message from %s: %s", host, buf);
 
 	return;
 }
