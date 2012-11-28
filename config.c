@@ -55,13 +55,13 @@ int parse_config()
 		} else if (strcasecmp(key, "amqp_exchange_type") == 0) {
 			CFGCPY(cfg.amqp.exch_type);
 		} else if (strcasecmp(key, "syslog_listen") == 0) {
-			CFGCPY(cfg.listener.syslog.bind);
+			CFGCPY(cfg.syslog.bind);
 		} else if (strcasecmp(key, "syslog_port") == 0) {
-			CFGNCPY(cfg.listener.syslog.port);
+			CFGNCPY(cfg.syslog.port);
 		} else if (strcasecmp(key, "gelf_listen") == 0) {
-			CFGCPY(cfg.listener.gelf.bind);
+			CFGCPY(cfg.gelf.bind);
 		} else if (strcasecmp(key, "gelf_port") == 0) {
-			CFGNCPY(cfg.listener.gelf.port);
+			CFGNCPY(cfg.gelf.port);
 		}
 	}
 

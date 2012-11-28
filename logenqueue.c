@@ -16,7 +16,8 @@
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
-
+#include <zlib.h>
+#include <json/json.h>
 #include <event2/event.h>
 #include <amqp.h>
 #include <amqp_framing.h>
@@ -25,6 +26,22 @@
 
 struct  config  cfg;
 
+/*
+{
+  "version": "1.0",
+  "host": "www1",
+  "short_message": "Short message",
+  "full_message": "Backtrace here\n\nmore stuff",
+  "timestamp": 1291899928.412,
+  "level": 1,
+  "facility": "payment-backend",
+  "file": "/var/www/somefile.rb",
+  "line": 356,
+  "_user_id": 42,
+  "_something_else": "foo"
+}
+*/
+
 void
 got_msg(int fd, short event, void *arg)
 {
@@ -32,9 +49,11 @@ got_msg(int fd, short event, void *arg)
 	amqp_basic_properties_t props;
 	struct sockaddr from;
 	char host[32];
+	char *msg;
 	unsigned int host_len;
 	char buf[8129];
 	int r;
+	int sev;
 
 	if (event != EV_READ) {
 		fprintf(stderr, "not read event?\n");
@@ -43,20 +62,88 @@ got_msg(int fd, short event, void *arg)
 
 	host_len = sizeof(from);
 	r = recvfrom(fd, buf, sizeof(buf), 0, &from, &host_len);
-	buf[r] = '\0';
 	inet_ntop(from.sa_family, from.sa_data+2, host, sizeof(host));
+	buf[r] = '\0';
 
 	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
-	props.content_type = amqp_cstring_bytes("text/plain");
 	props.delivery_mode = 2; /* persistent delivery mode */
-	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
-				    amqp_cstring_bytes(cfg.amqp.host),
-				    0,
-				    0,
-				    &props,
-				    amqp_cstring_bytes(buf));
+	//props.content_type = amqp_cstring_bytes("text/plain");
+	props.content_type = amqp_cstring_bytes("application/octet-stream");
 
-	printf("Got Message from %s: %s", host, buf);
+	if (fd == cfg.syslog.fd) {
+		if (buf[0] != '<') {
+			printf("INVALID SYSLOG FORMAT!\n");
+			return;
+		}
+		msg = strchr(buf, '>');
+		*msg = '\0';
+		msg++;
+		sev = (int)strtol(buf+1,(char **)NULL,10);
+
+		json_object * jobj = json_object_new_object();
+
+		json_object *j_version = json_object_new_string("1.0");
+		json_object *j_host = json_object_new_string(host);
+		json_object *j_short_message = json_object_new_string(msg);
+		json_object *j_full_message = json_object_new_string(msg);
+		json_object *j_timestamp = json_object_new_double(time(NULL));
+		json_object *j_level = json_object_new_int(sev);
+		json_object *j_facility = json_object_new_string("syslog");
+		json_object *j_file = json_object_new_string("");
+		json_object *j_line = json_object_new_int(0);
+
+		json_object_object_add(jobj,"version", j_version);
+		json_object_object_add(jobj,"host", j_host);
+		json_object_object_add(jobj,"short_message", j_short_message);
+		json_object_object_add(jobj,"full_message", j_full_message);
+		json_object_object_add(jobj,"timestamp", j_timestamp);
+		json_object_object_add(jobj,"level", j_level);
+		json_object_object_add(jobj,"facility", j_facility);
+		json_object_object_add(jobj,"file", j_file);
+		json_object_object_add(jobj,"line", j_line);
+
+#define	 CHUNK	128000
+		int flush;
+		z_stream strm;
+		u_char in[CHUNK];
+		u_char out[CHUNK];
+
+		/* allocate deflate state */
+		strm.zalloc = Z_NULL;
+		strm.zfree = Z_NULL;
+		strm.opaque = Z_NULL;
+		deflateInit(&strm, Z_DEFAULT_COMPRESSION);
+
+		strncpy((char *)in, json_object_to_json_string(jobj), sizeof(in));
+		strm.avail_in = strlen((char *)in);
+		strm.next_in = in;
+		strm.avail_out = CHUNK;
+		strm.next_out = out;
+		//flush = Z_NO_FLUSH;
+		flush = Z_FINISH;
+		deflate(&strm, flush);
+
+		out[strm.avail_out] = '\0';
+
+		//strm.avail_in = 0;
+		//strm.avail_out = 0;
+		//flush = Z_FINISH;
+		//deflate(&strm, flush);
+
+		(void)deflateEnd(&strm);
+
+		//printf ("The json object created: %sn",json_object_to_json_string(jobj));
+
+		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
+				    &props, amqp_cstring_bytes((char *)out));
+	} else if (fd == cfg.gelf.fd) {
+		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
+				    &props, amqp_cstring_bytes(buf));
+	}
+
+	//printf("Got Message from %s: %s", host, buf);
 
 	return;
 }
@@ -95,6 +182,7 @@ int udp_listen(char *bindaddr, u_int port)
 	ret = bind(udpsock_fd, (struct sockaddr *)&staddr, sizeof(staddr));
 	if (ret != 0) {
 		printf("error binding to socket: %s\n", strerror(errno));
+		printf("bind: %s\n", bindaddr);
 		exit(-1);
 	}
 
@@ -105,7 +193,7 @@ int main(int argc, char **argv)
 {
 	struct event *eve;
 	struct event_base *base;
-	int syslog_fd, gelf_fd, amqpsock_fd;
+
 	amqp_connection_state_t conn;
 
 	parse_opts(&argc, &argv);
@@ -114,14 +202,14 @@ int main(int argc, char **argv)
 
 	base = event_base_new();
 
-	syslog_fd = udp_listen(cfg.listener.syslog.bind,
-			cfg.listener.syslog.port);
-	gelf_fd = udp_listen(cfg.listener.gelf.bind,
-			cfg.listener.gelf.port);
+	cfg.syslog.fd = udp_listen(cfg.syslog.bind,
+			cfg.syslog.port);
+	cfg.gelf.fd = udp_listen(cfg.gelf.bind,
+			cfg.gelf.port);
 
 	conn = amqp_new_connection();
-	amqpsock_fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
-	amqp_set_sockfd(conn, amqpsock_fd);
+	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
+	amqp_set_sockfd(conn, cfg.amqp.fd);
 	amqp_login(conn, cfg.amqp.vhost, 0, 131072, 0,
 		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
 	amqp_channel_open(conn, 1);
@@ -133,9 +221,9 @@ int main(int argc, char **argv)
 				       0,
 				       amqp_empty_table);
 
-	eve = event_new(base, syslog_fd, EV_READ | EV_PERSIST, got_msg, &conn);
+	eve = event_new(base, cfg.syslog.fd, EV_READ | EV_PERSIST, got_msg, &conn);
 	event_add(eve, NULL);
-	eve = event_new(base, gelf_fd, EV_READ | EV_PERSIST, got_msg, &conn);
+	eve = event_new(base, cfg.gelf.fd, EV_READ | EV_PERSIST, got_msg, &conn);
 	event_add(eve, NULL);
 
 	event_base_dispatch(base);

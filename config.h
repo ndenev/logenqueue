@@ -19,28 +19,26 @@ struct amqp_config {
 	char	vhost[255];
 	char	exch_name[255];
 	char	exch_type[64];
-	char	rt_key[255];
+	int	fd;
 };
 
 struct syslog_listener {
 	char	bind[HOST_NAME_MAX];
 	u_int	port;
+	int	fd;
 };
 
 struct gelf_listener {
 	char	bind[HOST_NAME_MAX];
 	u_int	port;
+	int	fd;
 
-};
-
-struct listener_config {
-	struct syslog_listener syslog;
-	struct gelf_listener gelf;
 };
 
 struct config {
 	struct amqp_config amqp;
-	struct listener_config listener;
+	struct syslog_listener syslog;
+	struct gelf_listener gelf;
 };
 
 #endif
