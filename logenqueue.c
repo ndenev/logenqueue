@@ -70,6 +70,7 @@ got_msg(int fd, short event, void *arg)
 	int pri;
 	struct tm tim;
 	time_t ts;
+	amqp_bytes_t msgb;
 
 	if (event != EV_READ) {
 		fprintf(stderr, "not read event?\n");
@@ -151,25 +152,23 @@ got_msg(int fd, short event, void *arg)
 		strncpy((char *)in, json_object_to_json_string(jobj), sizeof(in));
 		strm.avail_in = strlen((char *)in);
 		strm.next_in = in;
-		strm.avail_out = CHUNK;
+		strm.avail_out = CHUNK*2;
 		strm.next_out = out;
 		flush = Z_FINISH;
 		deflate(&strm, flush);
 
-		//out[strm.avail_out+1] = '\0';
-
 		(void)deflateEnd(&strm);
 
-		//printf("%s\n",json_object_to_json_string(jobj));
-
-		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
-				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
-				    &props, amqp_cstring_bytes((char *)out));
+		msgb.len = (CHUNK*2) - strm.avail_out;
+		msgb.bytes = out;
 	} else if (fd == cfg.gelf.fd) {
-		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
-				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
-				    &props, amqp_cstring_bytes(buf));
+		msgb.len = r;
+		msgb.bytes = buf;
 	}
+
+	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+			    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
+			    &props, msgb);
 
 	return;
 }
