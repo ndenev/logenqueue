@@ -12,6 +12,7 @@
 #include <sys/param.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <termios.h>
@@ -62,11 +63,13 @@ got_msg(int fd, short event, void *arg)
 	struct sockaddr from;
 	struct hostent *hp;
 	char host[256];
-	char *msg;
+	char *msg, *msg2;
 	unsigned int host_len;
 	char buf[8129];
 	int r;
 	int pri;
+	struct tm tim;
+	time_t ts;
 
 	if (event != EV_READ) {
 		fprintf(stderr, "not read event?\n");
@@ -101,13 +104,21 @@ got_msg(int fd, short event, void *arg)
 		int severity = pri & 0x07;
 		int facility = pri >> 3;
 
+		msg2 = strptime(msg, "%b %d %H:%M:%S", &tim);
+		if (msg2) {
+			ts = mktime(&tim);
+			msg = msg2;
+		} else {
+			ts = time(NULL);
+		}	
+
 		json_object * jobj = json_object_new_object();
 
 		json_object *j_version = json_object_new_string("1.0");
 		json_object *j_host = json_object_new_string(host);
 		json_object *j_short_message = json_object_new_string(msg);
 		json_object *j_full_message = json_object_new_string(msg);
-		json_object *j_timestamp = json_object_new_double(time(NULL));
+		json_object *j_timestamp = json_object_new_double(ts);
 		json_object *j_level = json_object_new_int(severity);
 		json_object *j_facility = json_object_new_string(fac2str[facility]);
 		json_object *j_file = json_object_new_string("");
@@ -150,7 +161,7 @@ got_msg(int fd, short event, void *arg)
 
 		(void)deflateEnd(&strm);
 
-		printf ("%s\n",json_object_to_json_string(jobj));
+		//printf("%s\n",json_object_to_json_string(jobj));
 
 		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
