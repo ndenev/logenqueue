@@ -1,22 +1,25 @@
 #include <stdio.h>
-#include <yaml.h>
+#include <stdlib.h>
 #include <getopt.h>
+#include <string.h>
 #include <sys/param.h>
 
 #include "logenqueue.h"
+#include "config.h"
 
 #ifndef CONFIG_FILE
-#define CONFIG_FILE "logenqueue-conf.yml"
+#define CONFIG_FILE "logenqueue.conf"
 #endif
 
 char    config_file[MAXPATHLEN] = CONFIG_FILE;
-struct	config	*cfg;
+extern	struct config cfg;
 
 int parse_config()
 {
-	yaml_parser_t	parser;
-	yaml_event_t	event;
-	FILE		*conf = NULL;
+	FILE	*conf = NULL;
+	char	line[1024];
+	int	linelen;
+	char	*key, *val;
 
 	conf = fopen(CONFIG_FILE, "r");
 	if (conf == NULL) {
@@ -24,63 +27,43 @@ int parse_config()
 		exit(-1);
 	}
 
-
-	if (!yaml_parser_initialize(&parser)) {
-		fprintf(stderr, "Unable to initialize YAML parser!\n");
-		exit(-1);
-	}
-
-	yaml_parser_set_input_file(&parser, conf);
-
-	memset(&event, 0, sizeof(yaml_event_t));
-
-	do {
-		yaml_parser_parse(&parser, &event);
-
-		switch(event.type) {
-		case YAML_NO_EVENT:
-			puts("No event!");
-		break;
-		/* Stream start/end */
-		case YAML_STREAM_START_EVENT:
-			puts("STREAM START");
-		break;
-		case YAML_STREAM_END_EVENT:
-			puts("STREAM END");
-		break;
-		/* Block delimeters */
-		case YAML_DOCUMENT_START_EVENT:
-			puts("Start Document");
-		break;
-		case YAML_DOCUMENT_END_EVENT:
-			puts("End Document");
-		break;
-		case YAML_SEQUENCE_START_EVENT:
-			puts("Start Sequence");
-		break;
-		case YAML_SEQUENCE_END_EVENT:
-			puts("End Sequence");
-		break;
-		case YAML_MAPPING_START_EVENT:
-			puts("Start Mapping");
-		break;
-		case YAML_MAPPING_END_EVENT:
-			puts("End Mapping");
-		break;
-		/* Data */
-		case YAML_ALIAS_EVENT:
-			printf("Got alias (anchor %s)\n",
-				event.data.alias.anchor);
-		break;
-		case YAML_SCALAR_EVENT:
-			printf("Got scalar (value %s)\n",
-				event.data.scalar.value);
-		break;
+	while (fgets(line, sizeof(line), conf)) {
+		linelen = strlen(line);
+		/* chomp */
+		if (line[linelen-1] == '\n')
+			line[linelen-1] = '\0';
+		key = line;
+		val = strchr(line, '=');
+		if (!val)
+			continue;
+		*val = '\0';
+		val++;
+#define CFGCPY(dst)	strncpy(dst, val, sizeof(dst));
+#define CFGNCPY(dst)	dst = (int)strtol(val,(char **)NULL,10);
+		if (strcasecmp(key, "amqp_host") == 0) {
+			CFGCPY(cfg.amqp.host);
+		} else if (strcasecmp(key, "amqp_port") == 0) {
+			CFGNCPY(cfg.amqp.port);
+		} else if (strcasecmp(key, "amqp_user") == 0) {
+			CFGCPY(cfg.amqp.user);
+		} else if (strcasecmp(key, "amqp_pass") == 0) {
+			CFGCPY(cfg.amqp.pass);
+		} else if (strcasecmp(key, "amqp_vhost") == 0) {
+			CFGCPY(cfg.amqp.vhost);
+		} else if (strcasecmp(key, "amqp_exchange_name") == 0) {
+			CFGCPY(cfg.amqp.exch_name);
+		} else if (strcasecmp(key, "amqp_exchange_type") == 0) {
+			CFGCPY(cfg.amqp.exch_type);
+		} else if (strcasecmp(key, "syslog_listen") == 0) {
+			CFGCPY(cfg.listener.syslog.bind);
+		} else if (strcasecmp(key, "syslog_port") == 0) {
+			CFGNCPY(cfg.listener.syslog.port);
+		} else if (strcasecmp(key, "gelf_listen") == 0) {
+			CFGCPY(cfg.listener.gelf.bind);
+		} else if (strcasecmp(key, "gelf_port") == 0) {
+			CFGNCPY(cfg.listener.gelf.port);
 		}
-		if(event.type != YAML_STREAM_END_EVENT)
-			yaml_event_delete(&event);
-	} while (event.type != YAML_STREAM_END_EVENT);
-		yaml_event_delete(&event);
+	}
 
 	return 0;
 }

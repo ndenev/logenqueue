@@ -1,16 +1,15 @@
+#ifndef CONFIG_H_INCLUDED
+#define CONFIG_H_INCLUDED
+
 #include <sys/types.h>
 #include <sys/param.h>
 
-#ifndef HOST_NAME_MAX
+//#ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX	255
-#endif
+//#endif
 
 int	parse_config();
 void	parse_opts(int*, char***);
-
-const char *exchange = "syslog";
-const char *exchangetype = "topic";
-const char *routingkey = "#";
 
 struct amqp_config {
 	char	host[HOST_NAME_MAX];
@@ -43,3 +42,5 @@ struct config {
 	struct amqp_config amqp;
 	struct listener_config listener;
 };
+
+#endif

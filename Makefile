@@ -4,7 +4,7 @@ CFLAGS = -g -Wall -I/usr/local/include -I/opt/local/include
 LDFLAGS = -L/usr/local/lib/event2 -L/opt/local/lib/event2 -L/opt/local/lib -L/usr/local/lib -g
 RM = /bin/rm -f
 
-LIBS = -levent_core -lyaml -lrabbitmq -ljson
+LIBS = -levent_core -lrabbitmq -ljson
 
 OBJS = logenqueue.o config.o
 PROG = logenqueue

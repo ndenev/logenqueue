@@ -18,11 +18,12 @@
 #include <unistd.h>
 
 #include <event2/event.h>
-#include <yaml.h>
 #include <amqp.h>
 #include <amqp_framing.h>
 
 #include "config.h"
+
+struct  config  cfg;
 
 void
 got_msg(int fd, short event, void *arg)
@@ -48,8 +49,8 @@ got_msg(int fd, short event, void *arg)
 	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
 	props.content_type = amqp_cstring_bytes("text/plain");
 	props.delivery_mode = 2; /* persistent delivery mode */
-	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(exchange),
-				    amqp_cstring_bytes(host),
+	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+				    amqp_cstring_bytes(cfg.amqp.host),
 				    0,
 				    0,
 				    &props,
@@ -113,19 +114,21 @@ int main(int argc, char **argv)
 
 	base = event_base_new();
 
-	syslog_fd = udp_listen("0.0.0.0", 5140);
-	gelf_fd = udp_listen("0.0.0.0", 12201);
+	syslog_fd = udp_listen(cfg.listener.syslog.bind,
+			cfg.listener.syslog.port);
+	gelf_fd = udp_listen(cfg.listener.gelf.bind,
+			cfg.listener.gelf.port);
 
 	conn = amqp_new_connection();
-	amqpsock_fd = amqp_open_socket("10.0.0.13", 5672);
+	amqpsock_fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
 	amqp_set_sockfd(conn, amqpsock_fd);
-	amqp_login(conn, "/", 0, 131072, 0,
-		AMQP_SASL_METHOD_PLAIN, "guest", "guest");
+	amqp_login(conn, cfg.amqp.vhost, 0, 131072, 0,
+		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
 	amqp_channel_open(conn, 1);
 	amqp_get_rpc_reply(conn);
 
-	amqp_exchange_declare(conn, 1, amqp_cstring_bytes(exchange),
-				       amqp_cstring_bytes(exchangetype),
+	amqp_exchange_declare(conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+				       amqp_cstring_bytes(cfg.amqp.exch_type),
 				       0,
 				       0,
 				       amqp_empty_table);
