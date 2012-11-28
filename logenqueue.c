@@ -21,6 +21,7 @@
 #include <event2/event.h>
 #include <amqp.h>
 #include <amqp_framing.h>
+#include <netdb.h>
 
 #include "config.h"
 
@@ -59,7 +60,8 @@ got_msg(int fd, short event, void *arg)
 	amqp_connection_state_t *conn = arg;
 	amqp_basic_properties_t props;
 	struct sockaddr from;
-	char host[32];
+	struct hostent *hp;
+	char host[256];
 	char *msg;
 	unsigned int host_len;
 	char buf[8129];
@@ -73,7 +75,12 @@ got_msg(int fd, short event, void *arg)
 
 	host_len = sizeof(from);
 	r = recvfrom(fd, buf, sizeof(buf), 0, &from, &host_len);
-	inet_ntop(from.sa_family, from.sa_data+2, host, sizeof(host));
+	if ((hp = gethostbyaddr((const void *)&from.sa_data+2, sizeof(struct in_addr), AF_INET))) {
+		strncpy(host, hp->h_name, sizeof(host));
+	} else {
+		inet_ntop(from.sa_family, from.sa_data+2, host, sizeof(host));
+	}
+
 	buf[r] = '\0';
 
 	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
@@ -139,7 +146,7 @@ got_msg(int fd, short event, void *arg)
 		flush = Z_FINISH;
 		deflate(&strm, flush);
 
-		out[strm.avail_out+1] = '\0';
+		//out[strm.avail_out+1] = '\0';
 
 		(void)deflateEnd(&strm);
 
