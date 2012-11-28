@@ -1,9 +1,16 @@
 #include <stdio.h>
 #include <yaml.h>
+#include <getopt.h>
+#include <sys/param.h>
 
-#include "config.h"
+#include "logenqueue.h"
 
+#ifndef CONFIG_FILE
 #define CONFIG_FILE "logenqueue-conf.yml"
+#endif
+
+char    config_file[MAXPATHLEN] = CONFIG_FILE;
+struct	config	*cfg;
 
 int parse_config()
 {
@@ -76,4 +83,34 @@ int parse_config()
 		yaml_event_delete(&event);
 
 	return 0;
+}
+
+void
+parse_opts(int *argc, char ***argv)
+{
+	int opt;
+
+	static struct option longopts[] = {
+		{ "conf",	required_argument,	NULL,	'c' },
+		{ "debug",	no_argument,		NULL,	'd' },
+		{ "verbose",	no_argument,		NULL,	'v' },
+		{ NULL,		0,			NULL,	0 },
+	};
+
+        while ((opt = getopt_long(*argc, *argv,
+                                "c:dv", longopts, NULL)) != -1) {
+                switch (opt) {
+                        case 'c':
+				strncpy(config_file, optarg, MAXPATHLEN);
+                                break;
+                        case 'd':
+                                debug++;
+                                break;
+                        case 'v':
+                                verbose++;
+                                break;
+			default:
+				break;
+		}
+	}
 }

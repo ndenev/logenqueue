@@ -3,7 +3,6 @@
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <getopt.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdio.h>
@@ -24,49 +23,6 @@
 #include <amqp_framing.h>
 
 #include "config.h"
-#include "logenqueue.h"
-
-#ifndef DEFAULT_CONFIG_FILE
-#define DEFAULT_CONFIG_FILE "logenqueue-conf.yml"
-#endif
-
-const char *exchange = "syslog";
-const char *exchangetype = "topic";
-const char *routingkey = "#";
-
-int	debug = 0;
-int	verbose = 0;
-char	config_file[MAXPATHLEN] = DEFAULT_CONFIG_FILE;
-
-void
-parse_opts(int *argc, char ***argv)
-{
-	int opt;
-
-	static struct option longopts[] = {
-		{ "conf",	required_argument,	NULL,	'c' },
-		{ "debug",	no_argument,		NULL,	'd' },
-		{ "verbose",	no_argument,		NULL,	'v' },
-		{ NULL,		0,			NULL,	0 },
-	};
-
-        while ((opt = getopt_long(*argc, *argv,
-                                "c:dv", longopts, NULL)) != -1) {
-                switch (opt) {
-                        case 'c':
-				strncpy(config_file, optarg, MAXPATHLEN);
-                                break;
-                        case 'd':
-                                debug++;
-                                break;
-                        case 'v':
-                                verbose++;
-                                break;
-			default:
-				break;
-		}
-	}
-}
 
 void
 got_msg(int fd, short event, void *arg)
@@ -148,7 +104,7 @@ int main(int argc, char **argv)
 {
 	struct event *eve;
 	struct event_base *base;
-	int udpsock_fd, amqpsock_fd;
+	int syslog_fd, gelf_fd, amqpsock_fd;
 	amqp_connection_state_t conn;
 
 	parse_opts(&argc, &argv);
@@ -157,10 +113,10 @@ int main(int argc, char **argv)
 
 	base = event_base_new();
 
-	udpsock_fd = udp_listen("0.0.0.0", 5140);
+	syslog_fd = udp_listen("0.0.0.0", 5140);
+	gelf_fd = udp_listen("0.0.0.0", 12201);
 
 	conn = amqp_new_connection();
-	//amqpsock_fd = amqp_open_socket("10.128.2.10", 5672);
 	amqpsock_fd = amqp_open_socket("10.0.0.13", 5672);
 	amqp_set_sockfd(conn, amqpsock_fd);
 	amqp_login(conn, "/", 0, 131072, 0,
@@ -174,7 +130,9 @@ int main(int argc, char **argv)
 				       0,
 				       amqp_empty_table);
 
-	eve = event_new(base, udpsock_fd, EV_READ | EV_PERSIST, got_msg, &conn);
+	eve = event_new(base, syslog_fd, EV_READ | EV_PERSIST, got_msg, &conn);
+	event_add(eve, NULL);
+	eve = event_new(base, gelf_fd, EV_READ | EV_PERSIST, got_msg, &conn);
 	event_add(eve, NULL);
 
 	event_base_dispatch(base);

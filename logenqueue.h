@@ -1,1 +1,3 @@
-int parse_config();
+int     debug = 0;
+int     verbose = 0;
+
