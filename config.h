@@ -4,9 +4,7 @@
 #include <sys/types.h>
 #include <sys/param.h>
 
-//#ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX	255
-//#endif
 
 int	parse_config();
 void	parse_opts(int*, char***);

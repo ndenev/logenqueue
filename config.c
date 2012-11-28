@@ -69,6 +69,16 @@ int parse_config()
 }
 
 void
+usage()
+{
+	printf("logenqueue [-dv] [-c /path/to/config.file]\n");
+	printf("	-c 	--conf		specify config file to use\n");
+	printf("	-d	--debug		enable debug mode\n");
+	printf("	-h	--help		this help screen\n");
+	printf("	-v	--verbose	enable verbose mode\n");
+}
+
+void
 parse_opts(int *argc, char ***argv)
 {
 	int opt;
@@ -76,12 +86,13 @@ parse_opts(int *argc, char ***argv)
 	static struct option longopts[] = {
 		{ "conf",	required_argument,	NULL,	'c' },
 		{ "debug",	no_argument,		NULL,	'd' },
+		{ "help",	no_argument,		NULL,	'h' },
 		{ "verbose",	no_argument,		NULL,	'v' },
 		{ NULL,		0,			NULL,	0 },
 	};
 
         while ((opt = getopt_long(*argc, *argv,
-                                "c:dv", longopts, NULL)) != -1) {
+                                "c:dhv", longopts, NULL)) != -1) {
                 switch (opt) {
                         case 'c':
 				strncpy(config_file, optarg, MAXPATHLEN);
@@ -93,7 +104,15 @@ parse_opts(int *argc, char ***argv)
                                 verbose++;
                                 break;
 			default:
+				usage();
+				exit(0);
 				break;
 		}
+	}
+	*argc -= optind;
+	*argv += optind;
+	if (*argc > 0) {
+		printf("too many arguments\n");
+		exit(-1);
 	}
 }
