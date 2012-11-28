@@ -28,32 +28,40 @@
 
 struct  config  cfg;
 
-char *fac2str[] = {
-	"kernel",
-	"user-level",
-	"mail",
-	"system daemon",
-	"security/authorization",
-	"syslogd",
-	"lpr",
-	"network news",
-	"uucp",
-	"clock",
-	"security/authorization",
-	"ftp",
-	"ntp",
-	"log audit",
-	"log alert",
-	"clock",
-	"local0",
-	"local1",
-	"local2",
-	"local3",
-	"local4",
-	"local5",
-	"local6",
-	"local7"
-};
+char *
+fac2str(int facility) {
+	char *f2s[] = {
+		"kernel",
+		"user-level",
+		"mail",
+		"system daemon",
+		"security/authorization",
+		"syslogd",
+		"lpr",
+		"network news",
+		"uucp",
+		"clock",
+		"security/authorization",
+		"ftp",
+		"ntp",
+		"log audit",
+		"log alert",
+		"clock",
+		"local0",
+		"local1",
+		"local2",
+		"local3",
+		"local4",
+		"local5",
+		"local6",
+		"local7"
+	};
+	if (facility > 0 && facility < 23) {
+		return (f2s[facility]);
+	} else {
+		return ("0");
+	}
+}
 
 void
 got_msg(int fd, short event, void *arg)
@@ -120,7 +128,7 @@ got_msg(int fd, short event, void *arg)
 		json_object *j_full_message = json_object_new_string(buf);
 		json_object *j_timestamp = json_object_new_double(ts);
 		json_object *j_level = json_object_new_int(severity);
-		json_object *j_facility = json_object_new_string(fac2str[facility]);
+		json_object *j_facility = json_object_new_string(fac2str(facility));
 		json_object *j_file = json_object_new_string("");
 		json_object *j_line = json_object_new_int(0);
 
