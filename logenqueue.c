@@ -94,7 +94,7 @@ got_msg(int fd, short event, void *arg)
 
 	if (fd == cfg.syslog.fd) {
 		if (buf[0] != '<') {
-			printf("INVALID SYSLOG FORMAT!\n");
+			printf("INVALID SYSLOG FORMAT! : %s\n", buf);
 			return;
 		}
 		msg = strchr(buf, '>');
