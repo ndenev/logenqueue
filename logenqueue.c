@@ -175,7 +175,7 @@ got_syslog_msg(int fd, short event, void *arg)
 		props.content_type = amqp_cstring_bytes("application/octet-stream");
 
 		if (buf[0] != '<') {
-			printf("INVALID SYSLOG FORMAT! : %s\n", buf);
+			printf("invalid syslog format from (%s). msg: \"%s\"\n", host, buf);
 			return;
 		}
 		msg = strchr(buf, '>');
