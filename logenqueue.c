@@ -50,6 +50,7 @@
 #include <amqp.h>
 #include <amqp_framing.h>
 #include <netdb.h>
+#include <math.h>
 
 #include "logenqueue.h"
 #include "config.h"
@@ -58,9 +59,10 @@ struct  config  cfg;
 
 static int msg_rcvd = 0;
 static int msg_pub = 0;
+static u_int64_t msg_cnt_ts;
 
-#define STATS_TIMEOUT	10
-
+#define STATS_TIMEOUT	1
+#define LOOP_YIELD 256
 #define	ZLIBD	0
 #define	GZIPD	1
 #define	CHUNKD	2
@@ -109,10 +111,20 @@ fac2str(int facility) {
 void
 message_stats(int fd __unused, short event __unused, void *arg __unused)
 {
-	printf("Receiving %d msgs/sec\n", msg_rcvd / STATS_TIMEOUT);
-	printf("Publishing %d msgs/sec\n", msg_pub / STATS_TIMEOUT);
+	struct timeval now;
+	u_int64_t now_usec;
+	gettimeofday(&now, NULL);
+
+	now_usec = ((int64_t)now.tv_sec * 1000000 + now.tv_usec);
+	msg_cnt_ts = now_usec - msg_cnt_ts;
+
+ 	printf("incoming msg rate  : %ld msg/sec\n", lroundf(1000000 / ( msg_cnt_ts / msg_rcvd )) );
+	//printf("publish msg rate  : %ld msg/sec\n", lroundf(1000000 / ( msg_cnt_ts / msg_pub )) );
+	
 	msg_rcvd = 0;
 	msg_pub = 0;
+	msg_cnt_ts = now_usec;
+
 }
 
 void
@@ -141,7 +153,6 @@ got_syslog_msg(int fd, short event, void *arg)
 	ip_len = sizeof(from);
 	int loop = 0;	
 	while ((r = recvfrom(fd, buf, sizeof(buf), 0, &from, &ip_len)) > 0) {
-		//if (loop) printf("looping for %d time\n", loop);
 		msg_rcvd++;
 		if ((hp = gethostbyaddr((const void *)&from.sa_data+2, sizeof(struct in_addr), AF_INET))) {
 			host = hp->h_name;
@@ -233,6 +244,8 @@ got_syslog_msg(int fd, short event, void *arg)
 				    &props, msgb);
 		msg_pub++;
 		loop++;
+		if (loop > LOOP_YIELD)
+			return;
 	}
 		return;
 }
@@ -251,6 +264,7 @@ got_gelf_msg(int fd, short event, void *arg)
 		return;
 	}
 
+	int loop = 0;
 	while ((r = recvfrom(fd, buf, sizeof(buf), 0, NULL, NULL)) > 0) {
 
 #define	GELF_MAGIC(type)	bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
@@ -277,6 +291,9 @@ got_gelf_msg(int fd, short event, void *arg)
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 				    &props, msgb);
 		msg_pub++;
+		loop++;
+		if (loop > LOOP_YIELD) 
+			return;
 	}
 
 	return;
@@ -332,6 +349,7 @@ int main(int argc, char **argv)
 	struct event *eve;
 	struct event_base *base;
 	struct timeval tv = { STATS_TIMEOUT, 0 };
+	struct timeval ts;
 
 	amqp_connection_state_t conn;
 
@@ -369,6 +387,8 @@ int main(int argc, char **argv)
 	eve = event_new(base, -1, EV_PERSIST, message_stats, NULL);
 	event_add(eve, &tv);
 
+	gettimeofday(&ts, NULL);
+	msg_cnt_ts = ((int64_t)ts.tv_sec * 1000000 + ts.tv_usec);
 	event_base_dispatch(base);
 
 	return 0;
