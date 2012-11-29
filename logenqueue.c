@@ -348,16 +348,30 @@ int udp_listen(char *bindaddr, u_int port)
 
 int main(int argc, char **argv)
 {
-	struct event *eve;
-	struct event_base *base;
-	struct timeval tv = { STATS_TIMEOUT, 0 };
-	struct timeval ts;
+	struct	event *eve;
+	struct	event_base *base;
+	struct	timeval tv = { STATS_TIMEOUT, 0 };
+	struct	timeval ts;
+	int	pid;
 
 	amqp_connection_state_t conn;
 
 	parse_opts(&argc, &argv);
 
 	parse_config();
+	
+	if (!debug) {
+		pid = fork();
+		if (pid < 0) {
+			printf("unable to fork: %s\n", strerror(errno));
+			exit(-1);
+		}
+		if (pid > 0) {
+			printf("logenqueue started and going into background\n");
+			_Exit(0);
+		}
+		setsid();
+	}
 
 	base = event_base_new();
 
@@ -386,8 +400,10 @@ int main(int argc, char **argv)
 	eve = event_new(base, cfg.gelf.fd, EV_READ | EV_PERSIST, got_gelf_msg, &conn);
 	event_add(eve, NULL);
 
-	eve = event_new(base, -1, EV_PERSIST, message_stats, NULL);
-	event_add(eve, &tv);
+	if (verbose || debug) {
+		eve = event_new(base, -1, EV_PERSIST, message_stats, NULL);
+		event_add(eve, &tv);
+	}
 
 	gettimeofday(&ts, NULL);
 	msg_cnt_ts = ((int64_t)ts.tv_sec * 1000000 + ts.tv_usec);
