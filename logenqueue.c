@@ -28,9 +28,9 @@
 
 struct  config  cfg;
 
-char *
+static const char *
 fac2str(int facility) {
-	char *f2s[] = {
+	static const char *f2s[] = {
 		"kernel",
 		"user-level",
 		"mail",
@@ -64,15 +64,16 @@ fac2str(int facility) {
 }
 
 void
-got_msg(int fd, short event, void *arg)
+got_syslog_msg(int fd, short event, void *arg)
 {
 	amqp_connection_state_t *conn = arg;
 	amqp_basic_properties_t props;
 	struct sockaddr from;
 	struct hostent *hp;
-	char host[256];
+	char *host;
+	char ip[256];
 	char *msg, *msg2;
-	unsigned int host_len;
+	unsigned int ip_len;
 	char buf[8129];
 	int r;
 	int pri;
@@ -85,94 +86,118 @@ got_msg(int fd, short event, void *arg)
 		return;
 	}
 
-	host_len = sizeof(from);
-	r = recvfrom(fd, buf, sizeof(buf), 0, &from, &host_len);
+	ip_len = sizeof(from);
+	r = recvfrom(fd, buf, sizeof(buf), 0, &from, &ip_len);
 	if ((hp = gethostbyaddr((const void *)&from.sa_data+2, sizeof(struct in_addr), AF_INET))) {
-		strncpy(host, hp->h_name, sizeof(host));
+		host = hp->h_name;
 	} else {
-		inet_ntop(from.sa_family, from.sa_data+2, host, sizeof(host));
+		inet_ntop(from.sa_family, from.sa_data+2, ip, sizeof(ip));
+		host = ip;
 	}
 
 	buf[r] = '\0';
 
 	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
 	props.delivery_mode = 2; /* persistent delivery mode */
-	//props.content_type = amqp_cstring_bytes("text/plain");
 	props.content_type = amqp_cstring_bytes("application/octet-stream");
 
-	if (fd == cfg.syslog.fd) {
-		if (buf[0] != '<') {
-			printf("INVALID SYSLOG FORMAT! : %s\n", buf);
-			return;
-		}
-		msg = strchr(buf, '>');
-		msg++;
-		pri = (int)strtol(buf+1,(char **)NULL,10);
+	if (buf[0] != '<') {
+		printf("INVALID SYSLOG FORMAT! : %s\n", buf);
+		return;
+	}
+	msg = strchr(buf, '>');
+	msg++;
+	pri = (int)strtol(buf+1,(char **)NULL,10);
 
-		int severity = pri & 0x07;
-		int facility = pri >> 3;
+	int severity = pri & 0x07;
+	int facility = pri >> 3;
 
-		msg2 = strptime(msg, "%b %d %H:%M:%S", &tim);
-		if (msg2) {
-			ts = mktime(&tim);
-			msg = msg2;
-		} else {
-			ts = time(NULL);
-		}	
+	msg2 = strptime(msg, "%b %d %H:%M:%S", &tim);
+	if (msg2) {
+		ts = mktime(&tim);
+		msg = msg2;
+	} else {
+		ts = time(NULL);
+	}	
 
-		json_object * jobj = json_object_new_object();
+	json_object * jobj = json_object_new_object();
 
-		json_object *j_version = json_object_new_string("1.0");
-		json_object *j_host = json_object_new_string(host);
-		json_object *j_short_message = json_object_new_string(msg);
-		json_object *j_full_message = json_object_new_string(buf);
-		json_object *j_timestamp = json_object_new_double(ts);
-		json_object *j_level = json_object_new_int(severity);
-		json_object *j_facility = json_object_new_string(fac2str(facility));
-		json_object *j_file = json_object_new_string("");
-		json_object *j_line = json_object_new_int(0);
+	json_object *j_version = json_object_new_string("1.0");
+	json_object *j_host = json_object_new_string(host);
+	json_object *j_short_message = json_object_new_string(msg);
+	json_object *j_full_message = json_object_new_string(buf);
+	json_object *j_timestamp = json_object_new_double(ts);
+	json_object *j_level = json_object_new_int(severity);
+	json_object *j_facility = json_object_new_string(fac2str(facility));
+	json_object *j_file = json_object_new_string("");
+	json_object *j_line = json_object_new_int(0);
 
-		json_object_object_add(jobj,"version", j_version);
-		json_object_object_add(jobj,"host", j_host);
-		json_object_object_add(jobj,"short_message", j_short_message);
-		json_object_object_add(jobj,"full_message", j_full_message);
-		json_object_object_add(jobj,"timestamp", j_timestamp);
-		json_object_object_add(jobj,"level", j_level);
-		json_object_object_add(jobj,"facility", j_facility);
-		json_object_object_add(jobj,"file", j_file);
-		json_object_object_add(jobj,"line", j_line);
+	json_object_object_add(jobj,"version", j_version);
+	json_object_object_add(jobj,"host", j_host);
+	json_object_object_add(jobj,"short_message", j_short_message);
+	json_object_object_add(jobj,"full_message", j_full_message);
+	json_object_object_add(jobj,"timestamp", j_timestamp);
+	json_object_object_add(jobj,"level", j_level);
+	json_object_object_add(jobj,"facility", j_facility);
+	json_object_object_add(jobj,"file", j_file);
+	json_object_object_add(jobj,"line", j_line);
 
 #define	 CHUNK	9216
-		int flush;
-		z_stream strm;
-		u_char in[CHUNK];
-		u_char out[CHUNK*2];
+	int flush;
+	z_stream strm;
+	u_char in[CHUNK];
+	u_char out[CHUNK*2];
 
-		memset(in, 0, CHUNK);
-		memset(out, 0, CHUNK*2);
+	memset(in, 0, CHUNK);
+	memset(out, 0, CHUNK*2);
 
-		/* allocate deflate state */
-		strm.zalloc = Z_NULL;
-		strm.zfree = Z_NULL;
-		strm.opaque = Z_NULL;
-		deflateInit(&strm, Z_DEFAULT_COMPRESSION);
+	/* allocate deflate state */
+	strm.zalloc = Z_NULL;
+	strm.zfree = Z_NULL;
+	strm.opaque = Z_NULL;
+	deflateInit(&strm, Z_DEFAULT_COMPRESSION);
 
-		strncpy((char *)in, json_object_to_json_string(jobj), sizeof(in));
-		strm.avail_in = strlen((char *)in);
-		strm.next_in = in;
-		strm.avail_out = CHUNK*2;
-		strm.next_out = out;
-		flush = Z_FINISH;
-		deflate(&strm, flush);
+	strncpy((char *)in, json_object_to_json_string(jobj), sizeof(in));
+	strm.avail_in = strlen((char *)in);
+	strm.next_in = in;
+	strm.avail_out = CHUNK*2;
+	strm.next_out = out;
+	flush = Z_FINISH;
+	deflate(&strm, flush);
 
-		(void)deflateEnd(&strm);
+	(void)deflateEnd(&strm);
 
-		msgb.len = (CHUNK*2) - strm.avail_out;
-		msgb.bytes = out;
-	} else if (fd == cfg.gelf.fd) {
-		msgb.len = r;
-		msgb.bytes = buf;
+	msgb.len = (CHUNK*2) - strm.avail_out;
+	msgb.bytes = out;
+
+	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+			    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
+			    &props, msgb);
+
+	return;
+}
+
+void
+got_gelf_msg(int fd, short event, void *arg)
+{
+	amqp_connection_state_t *conn = arg;
+	amqp_basic_properties_t props;
+	char buf[8129];
+	int r;
+	amqp_bytes_t msgb;
+
+	if (event != EV_READ) {
+		fprintf(stderr, "not read event?\n");
+		return;
 	}
+
+	r = recvfrom(fd, buf, sizeof(buf), 0, NULL, NULL);
+	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+	props.delivery_mode = 2; /* persistent delivery mode */
+	props.content_type = amqp_cstring_bytes("application/octet-stream");
+
+	msgb.len = r;
+	msgb.bytes = buf;
 
 	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 			    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
@@ -203,6 +228,10 @@ int udp_listen(char *bindaddr, u_int port)
 	staddr.sin_addr.s_addr = inet_addr(bindaddr);
 	staddr.sin_port = htons(port);
 	staddr.sin_family = AF_INET;
+
+	noptval = 1024 * 1024;
+	ret = setsockopt(udpsock_fd, SOL_SOCKET, SO_RCVBUF,
+		(const void *)&noptval, sizeof(noptval));
 
 	noptval = 1;
 	ret = setsockopt(udpsock_fd, SOL_SOCKET, SO_REUSEADDR,
@@ -254,9 +283,9 @@ int main(int argc, char **argv)
 				       0,
 				       amqp_empty_table);
 
-	eve = event_new(base, cfg.syslog.fd, EV_READ | EV_PERSIST, got_msg, &conn);
+	eve = event_new(base, cfg.syslog.fd, EV_READ | EV_PERSIST, got_syslog_msg, &conn);
 	event_add(eve, NULL);
-	eve = event_new(base, cfg.gelf.fd, EV_READ | EV_PERSIST, got_msg, &conn);
+	eve = event_new(base, cfg.gelf.fd, EV_READ | EV_PERSIST, got_gelf_msg, &conn);
 	event_add(eve, NULL);
 
 	event_base_dispatch(base);
