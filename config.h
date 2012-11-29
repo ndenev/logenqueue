@@ -36,6 +36,9 @@
 int	parse_config();
 void	parse_opts(int*, char***);
 
+extern  int     debug;
+extern  int     verbose;
+
 struct amqp_config {
 	char	host[HOST_NAME_MAX];
 	u_int	port;

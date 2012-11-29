@@ -31,7 +31,6 @@
 #include <string.h>
 #include <sys/param.h>
 
-#include "logenqueue.h"
 #include "config.h"
 
 #ifndef CONFIG_FILE

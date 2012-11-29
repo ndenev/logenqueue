@@ -51,9 +51,20 @@
 #include <amqp_framing.h>
 #include <netdb.h>
 
+#include "logenqueue.h"
 #include "config.h"
 
 struct  config  cfg;
+
+#define	ZLIBD	0
+#define	GZIPD	1
+#define	CHUNKD	2
+
+static char gelf_magic[3][2] = {
+	{ 0x78, 0x9c }, 
+	{ 0x1f, 0x8b },
+	{ 0x1e, 0x0f },
+};
 
 static const char *
 fac2str(int facility) {
@@ -219,6 +230,20 @@ got_gelf_msg(int fd, short event, void *arg)
 	}
 
 	r = recvfrom(fd, buf, sizeof(buf), 0, NULL, NULL);
+
+#define	GELF_MAGIC(type)	bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
+
+	if (!GELF_MAGIC(ZLIBD)) {
+		DEBUG("Received ZLIB'd GELF message.\n");
+	} else if (!GELF_MAGIC(GZIPD)) {
+		DEBUG("Received GZIP'd GELF message.\n");
+	} else if (!GELF_MAGIC(CHUNKD)) {
+		DEBUG("Received CHUNKED GELF message.\n");
+	} else {
+		LOG("Unknown GELF type. Maybe RAW? Bailing out.");
+		return;
+	}
+
 	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
 	props.delivery_mode = 2; /* persistent delivery mode */
 	props.content_type = amqp_cstring_bytes("application/octet-stream");
@@ -270,8 +295,8 @@ int udp_listen(char *bindaddr, u_int port)
 
 	ret = bind(udpsock_fd, (struct sockaddr *)&staddr, sizeof(staddr));
 	if (ret != 0) {
-		printf("error binding to socket: %s\n", strerror(errno));
 		printf("bind: %s\n", bindaddr);
+		printf("error binding to socket: %s\n", strerror(errno));
 		exit(-1);
 	}
 

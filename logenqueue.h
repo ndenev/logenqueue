@@ -29,7 +29,7 @@
 #define LOGENQUEUE_H_INCLUDED
 
 #define LOG(...)	printf(__VA_ARGS__)
-#define DEBUG(...)      if (debug>0) printf(__VA__ARGS__)
+#define DEBUG(...)      if (debug>0) printf(__VA_ARGS__)
 #define VERBOSE(...)    if (verbose>0) printf(__VA_ARGS__)
 
 int     debug = 0;
