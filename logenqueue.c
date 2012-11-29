@@ -61,7 +61,7 @@ static int msg_rcvd = 0;
 static int msg_pub = 0;
 static u_int64_t msg_cnt_ts;
 
-#define STATS_TIMEOUT	1
+#define STATS_TIMEOUT	5
 #define LOOP_YIELD 256
 #define	ZLIBD	0
 #define	GZIPD	1
