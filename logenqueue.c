@@ -144,11 +144,18 @@ got_syslog_msg(int fd, short event, void *arg)
 	struct tm tim;
 	time_t ts;
 	amqp_bytes_t msgb;
+	int flush;
+	z_stream strm;
+	u_char in[9216];
+	u_char out[9216*2];
+
 
 	if (event != EV_READ) {
 		fprintf(stderr, "not read event?\n");
 		return;
 	}
+
+	hp = NULL;
 
 	ip_len = sizeof(from);
 	int loop = 0;	
@@ -178,6 +185,9 @@ got_syslog_msg(int fd, short event, void *arg)
 		int severity = pri & 0x07;
 		int facility = pri >> 3;
 
+		/* try to parse time from the message
+		 * or fall back to using current time
+		 */
 		msg2 = strptime(msg, "%b %d %H:%M:%S", &tim);
 		if (msg2) {
 			ts = mktime(&tim);
@@ -208,14 +218,6 @@ got_syslog_msg(int fd, short event, void *arg)
 		json_object_object_add(jobj,"file", j_file);
 		json_object_object_add(jobj,"line", j_line);
 
-		int flush;
-		z_stream strm;
-		u_char in[9216];
-		u_char out[9216*2];
-
-		//memset(in, 0, 9216);
-		//memset(out, 0, 9216*2);
-
 		/* allocate deflate state */
 		strm.zalloc = Z_NULL;
 		strm.zfree = Z_NULL;
@@ -223,10 +225,9 @@ got_syslog_msg(int fd, short event, void *arg)
 		deflateInit(&strm, Z_DEFAULT_COMPRESSION);
 
 		strncpy((char *)in, json_object_to_json_string(jobj), sizeof(in));
-		json_object_object_foreach(jobj,jk,jv) {
-			json_object_object_del(jobj,jk);
-		};
-		free(jobj);
+	
+		json_object_put(jobj);
+
 		strm.avail_in = strlen((char *)in);
 		strm.next_in = in;
 		strm.avail_out = 9216*2;
@@ -244,6 +245,7 @@ got_syslog_msg(int fd, short event, void *arg)
 				    &props, msgb);
 		msg_pub++;
 		loop++;
+
 		if (loop > LOOP_YIELD)
 			return;
 	}
