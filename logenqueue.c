@@ -56,11 +56,16 @@
 
 struct  config  cfg;
 
+static int msg_rcvd = 0;
+static int msg_pub = 0;
+
+#define STATS_TIMEOUT	10
+
 #define	ZLIBD	0
 #define	GZIPD	1
 #define	CHUNKD	2
 
-static char gelf_magic[3][2] = {
+static const char gelf_magic[3][2] = {
 	{ 0x78, 0x9c }, 
 	{ 0x1f, 0x8b },
 	{ 0x1e, 0x0f },
@@ -102,6 +107,15 @@ fac2str(int facility) {
 }
 
 void
+message_stats(int fd __unused, short event __unused, void *arg __unused)
+{
+	printf("Receiving %d msgs/sec\n", msg_rcvd / STATS_TIMEOUT);
+	printf("Publishing %d msgs/sec\n", msg_pub / STATS_TIMEOUT);
+	msg_rcvd = 0;
+	msg_pub = 0;
+}
+
+void
 got_syslog_msg(int fd, short event, void *arg)
 {
 	amqp_connection_state_t *conn = arg;
@@ -126,6 +140,9 @@ got_syslog_msg(int fd, short event, void *arg)
 
 	ip_len = sizeof(from);
 	r = recvfrom(fd, buf, sizeof(buf), 0, &from, &ip_len);
+	if (r < 0)
+		return;
+	msg_rcvd++;
 	if ((hp = gethostbyaddr((const void *)&from.sa_data+2, sizeof(struct in_addr), AF_INET))) {
 		host = hp->h_name;
 	} else {
@@ -211,6 +228,7 @@ got_syslog_msg(int fd, short event, void *arg)
 	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 			    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 			    &props, msgb);
+	msg_pub++;
 
 	return;
 }
@@ -230,7 +248,8 @@ got_gelf_msg(int fd, short event, void *arg)
 	}
 
 	r = recvfrom(fd, buf, sizeof(buf), 0, NULL, NULL);
-
+	if (r < 0)
+		return;
 #define	GELF_MAGIC(type)	bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
 	if (!GELF_MAGIC(ZLIBD)) {
@@ -254,6 +273,7 @@ got_gelf_msg(int fd, short event, void *arg)
 	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 			    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 			    &props, msgb);
+	msg_pub++;
 
 	return;
 }
@@ -307,6 +327,7 @@ int main(int argc, char **argv)
 {
 	struct event *eve;
 	struct event_base *base;
+	struct timeval tv = { STATS_TIMEOUT, 0 };
 
 	amqp_connection_state_t conn;
 
@@ -337,8 +358,12 @@ int main(int argc, char **argv)
 
 	eve = event_new(base, cfg.syslog.fd, EV_READ | EV_PERSIST, got_syslog_msg, &conn);
 	event_add(eve, NULL);
+
 	eve = event_new(base, cfg.gelf.fd, EV_READ | EV_PERSIST, got_gelf_msg, &conn);
 	event_add(eve, NULL);
+
+	eve = event_new(base, -1, EV_PERSIST, message_stats, NULL);
+	event_add(eve, &tv);
 
 	event_base_dispatch(base);
 
