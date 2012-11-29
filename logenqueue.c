@@ -139,98 +139,102 @@ got_syslog_msg(int fd, short event, void *arg)
 	}
 
 	ip_len = sizeof(from);
-	r = recvfrom(fd, buf, sizeof(buf), 0, &from, &ip_len);
-	if (r < 0)
+	int loop = 0;	
+	while ((r = recvfrom(fd, buf, sizeof(buf), 0, &from, &ip_len)) > 0) {
+		//if (loop) printf("looping for %d time\n", loop);
+		msg_rcvd++;
+		if ((hp = gethostbyaddr((const void *)&from.sa_data+2, sizeof(struct in_addr), AF_INET))) {
+			host = hp->h_name;
+		} else {
+			inet_ntop(from.sa_family, from.sa_data+2, ip, sizeof(ip));
+			host = ip;
+		}
+
+		buf[r] = '\0';
+
+		props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+		props.delivery_mode = 2; /* persistent delivery mode */
+		props.content_type = amqp_cstring_bytes("application/octet-stream");
+
+		if (buf[0] != '<') {
+			printf("INVALID SYSLOG FORMAT! : %s\n", buf);
+			return;
+		}
+		msg = strchr(buf, '>');
+		msg++;
+		pri = (int)strtol(buf+1,(char **)NULL,10);
+
+		int severity = pri & 0x07;
+		int facility = pri >> 3;
+
+		msg2 = strptime(msg, "%b %d %H:%M:%S", &tim);
+		if (msg2) {
+			ts = mktime(&tim);
+			msg = msg2;
+		} else {
+			ts = time(NULL);
+		}
+
+		json_object * jobj = json_object_new_object();
+
+		json_object *j_version = json_object_new_string("1.0");
+		json_object *j_host = json_object_new_string(host);
+		json_object *j_short_message = json_object_new_string(msg);
+		json_object *j_full_message = json_object_new_string(buf);
+		json_object *j_timestamp = json_object_new_double(ts);
+		json_object *j_level = json_object_new_int(severity);
+		json_object *j_facility = json_object_new_string(fac2str(facility));
+		json_object *j_file = json_object_new_string("");
+		json_object *j_line = json_object_new_int(0);
+
+		json_object_object_add(jobj,"version", j_version);
+		json_object_object_add(jobj,"host", j_host);
+		json_object_object_add(jobj,"short_message", j_short_message);
+		json_object_object_add(jobj,"full_message", j_full_message);
+		json_object_object_add(jobj,"timestamp", j_timestamp);
+		json_object_object_add(jobj,"level", j_level);
+		json_object_object_add(jobj,"facility", j_facility);
+		json_object_object_add(jobj,"file", j_file);
+		json_object_object_add(jobj,"line", j_line);
+
+		int flush;
+		z_stream strm;
+		u_char in[9216];
+		u_char out[9216*2];
+
+		//memset(in, 0, 9216);
+		//memset(out, 0, 9216*2);
+
+		/* allocate deflate state */
+		strm.zalloc = Z_NULL;
+		strm.zfree = Z_NULL;
+		strm.opaque = Z_NULL;
+		deflateInit(&strm, Z_DEFAULT_COMPRESSION);
+
+		strncpy((char *)in, json_object_to_json_string(jobj), sizeof(in));
+		json_object_object_foreach(jobj,jk,jv) {
+			json_object_object_del(jobj,jk);
+		};
+		free(jobj);
+		strm.avail_in = strlen((char *)in);
+		strm.next_in = in;
+		strm.avail_out = 9216*2;
+		strm.next_out = out;
+		flush = Z_FINISH;
+		deflate(&strm, flush);
+
+		(void)deflateEnd(&strm);
+
+		msgb.len = (9216*2) - strm.avail_out;
+		msgb.bytes = out;
+
+		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
+				    &props, msgb);
+		msg_pub++;
+		loop++;
+	}
 		return;
-	msg_rcvd++;
-	if ((hp = gethostbyaddr((const void *)&from.sa_data+2, sizeof(struct in_addr), AF_INET))) {
-		host = hp->h_name;
-	} else {
-		inet_ntop(from.sa_family, from.sa_data+2, ip, sizeof(ip));
-		host = ip;
-	}
-
-	buf[r] = '\0';
-
-	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
-	props.delivery_mode = 2; /* persistent delivery mode */
-	props.content_type = amqp_cstring_bytes("application/octet-stream");
-
-	if (buf[0] != '<') {
-		printf("INVALID SYSLOG FORMAT! : %s\n", buf);
-		return;
-	}
-	msg = strchr(buf, '>');
-	msg++;
-	pri = (int)strtol(buf+1,(char **)NULL,10);
-
-	int severity = pri & 0x07;
-	int facility = pri >> 3;
-
-	msg2 = strptime(msg, "%b %d %H:%M:%S", &tim);
-	if (msg2) {
-		ts = mktime(&tim);
-		msg = msg2;
-	} else {
-		ts = time(NULL);
-	}
-
-	json_object * jobj = json_object_new_object();
-
-	json_object *j_version = json_object_new_string("1.0");
-	json_object *j_host = json_object_new_string(host);
-	json_object *j_short_message = json_object_new_string(msg);
-	json_object *j_full_message = json_object_new_string(buf);
-	json_object *j_timestamp = json_object_new_double(ts);
-	json_object *j_level = json_object_new_int(severity);
-	json_object *j_facility = json_object_new_string(fac2str(facility));
-	json_object *j_file = json_object_new_string("");
-	json_object *j_line = json_object_new_int(0);
-
-	json_object_object_add(jobj,"version", j_version);
-	json_object_object_add(jobj,"host", j_host);
-	json_object_object_add(jobj,"short_message", j_short_message);
-	json_object_object_add(jobj,"full_message", j_full_message);
-	json_object_object_add(jobj,"timestamp", j_timestamp);
-	json_object_object_add(jobj,"level", j_level);
-	json_object_object_add(jobj,"facility", j_facility);
-	json_object_object_add(jobj,"file", j_file);
-	json_object_object_add(jobj,"line", j_line);
-
-#define	 CHUNK	9216
-	int flush;
-	z_stream strm;
-	u_char in[CHUNK];
-	u_char out[CHUNK*2];
-
-	memset(in, 0, CHUNK);
-	memset(out, 0, CHUNK*2);
-
-	/* allocate deflate state */
-	strm.zalloc = Z_NULL;
-	strm.zfree = Z_NULL;
-	strm.opaque = Z_NULL;
-	deflateInit(&strm, Z_DEFAULT_COMPRESSION);
-
-	strncpy((char *)in, json_object_to_json_string(jobj), sizeof(in));
-	strm.avail_in = strlen((char *)in);
-	strm.next_in = in;
-	strm.avail_out = CHUNK*2;
-	strm.next_out = out;
-	flush = Z_FINISH;
-	deflate(&strm, flush);
-
-	(void)deflateEnd(&strm);
-
-	msgb.len = (CHUNK*2) - strm.avail_out;
-	msgb.bytes = out;
-
-	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
-			    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
-			    &props, msgb);
-	msg_pub++;
-
-	return;
 }
 
 void
@@ -247,33 +251,33 @@ got_gelf_msg(int fd, short event, void *arg)
 		return;
 	}
 
-	r = recvfrom(fd, buf, sizeof(buf), 0, NULL, NULL);
-	if (r < 0)
-		return;
+	while ((r = recvfrom(fd, buf, sizeof(buf), 0, NULL, NULL)) > 0) {
+
 #define	GELF_MAGIC(type)	bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
-	if (!GELF_MAGIC(ZLIBD)) {
-		DEBUG("Received ZLIB'd GELF message.\n");
-	} else if (!GELF_MAGIC(GZIPD)) {
-		DEBUG("Received GZIP'd GELF message.\n");
-	} else if (!GELF_MAGIC(CHUNKD)) {
-		DEBUG("Received CHUNKED GELF message.\n");
-	} else {
-		LOG("Unknown GELF type. Maybe RAW? Bailing out.");
-		return;
+		if (!GELF_MAGIC(ZLIBD)) {
+			DEBUG("Received ZLIB'd GELF message.\n");
+		} else if (!GELF_MAGIC(GZIPD)) {
+			DEBUG("Received GZIP'd GELF message.\n");
+		} else if (!GELF_MAGIC(CHUNKD)) {
+			DEBUG("Received CHUNKED GELF message.\n");
+		} else {
+			LOG("Unknown GELF type. Maybe RAW? Bailing out.");
+			continue;
+		}
+
+		props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+		props.delivery_mode = 2; /* persistent delivery mode */
+		props.content_type = amqp_cstring_bytes("application/octet-stream");
+
+		msgb.len = r;
+		msgb.bytes = buf;
+
+		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
+				    &props, msgb);
+		msg_pub++;
 	}
-
-	props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
-	props.delivery_mode = 2; /* persistent delivery mode */
-	props.content_type = amqp_cstring_bytes("application/octet-stream");
-
-	msgb.len = r;
-	msgb.bytes = buf;
-
-	amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
-			    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
-			    &props, msgb);
-	msg_pub++;
 
 	return;
 }

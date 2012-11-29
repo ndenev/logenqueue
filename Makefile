@@ -1,6 +1,6 @@
 CC = gcc
 LD = gcc
-CFLAGS = -g -Wall -I/usr/local/include -I/opt/local/include
+CFLAGS = -std=c99 -g -Wall -I/usr/local/include -I/opt/local/include
 LDFLAGS = -L/usr/local/lib/event2 -L/opt/local/lib/event2 -L/opt/local/lib -L/usr/local/lib -g
 RM = /bin/rm -f
 
