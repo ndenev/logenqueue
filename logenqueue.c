@@ -54,13 +54,13 @@ fac2str(int facility) {
 		"local4",
 		"local5",
 		"local6",
-		"local7"
+		"local7",
+		"GELF"
 	};
-	if (facility > 0 && facility < 23) {
+	if (facility > 0 && facility < 23)
 		return (f2s[facility]);
-	} else {
-		return ("0");
-	}
+	else
+		return (f2s[24]);
 }
 
 void
