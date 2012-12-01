@@ -66,7 +66,8 @@ volatile static int msg_pub = 0;
 #define	GZIPD	1
 #define	CHUNKD	2
 
-#define BUFLEN 9216
+#define SYSLOG_BUF 1024
+#define GELF_BUF 65536
 
 struct worker_data {
 	int	id;
@@ -146,10 +147,10 @@ syslog_worker(void *arg)
 	struct	hostent *hp;
 	struct  sockaddr from;
 	u_int ip_len;
-	char 	host[256];
+	char 	host[_POSIX_HOST_NAME_MAX];
 	char	*msg, *msg2;
-	u_char	buf[8129];
-	u_char	esc_buf[8129*2];
+	u_char	buf[SYSLOG_BUF];
+	u_char	esc_buf[SYSLOG_BUF*2];
 	int	r, i1, i2;
 	int	pri;
 	struct	tm tim;
@@ -157,8 +158,8 @@ syslog_worker(void *arg)
 	amqp_bytes_t msgb;
 	int	flush;
 	z_stream strm;
-	u_char	in[9216*2];
-	u_char	out[9216*2];
+	u_char	in[SYSLOG_BUF*2];
+	u_char	out[SYSLOG_BUF*2];
 
 	DEBUG("syslog worker thread #%d started\n", self->id);
 
@@ -251,14 +252,14 @@ syslog_worker(void *arg)
 
 		strm.avail_in = strlen((char *)in);
 		strm.next_in = in;
-		strm.avail_out = 9216*2;
+		strm.avail_out = SYSLOG_BUF*2;
 		strm.next_out = out;
 		flush = Z_FINISH;
 		deflate(&strm, flush);
 
 		(void)deflateEnd(&strm);
 
-		msgb.len = (9216*2) - strm.avail_out;
+		msgb.len = (SYSLOG_BUF*2) - strm.avail_out;
 		msgb.bytes = out;
 
 		amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
@@ -277,7 +278,7 @@ gelf_worker(void *arg)
 
 	struct  amqp_state_t amqp;
 	amqp_bytes_t msgb;
-	u_char	buf[BUFLEN];
+	u_char	buf[GELF_BUF];
 	int	r;
 
 	DEBUG("gelf worker thread #%d started\n", self->id);
