@@ -184,6 +184,7 @@ syslog_worker(void *arg)
 		}
 		if (r == 0) {
 			printf("zero data read\n");
+			continue;
 		}
 		buf[r] = '\0';
 		msg_rcvd++;
@@ -212,11 +213,10 @@ syslog_worker(void *arg)
 		}
 		esc_buf[i2] = '\0';
 
-		if (esc_buf[0] != '<') {
+		if ( (esc_buf[0] != '<') || (!(msg = strchr((char *)esc_buf, '>'))) ) {
 			VERBOSE("invalid syslog format from (%s). msg: \"%s\"\n", host, esc_buf);
-			return;
+			continue;	
 		}
-		msg = strchr((char *)esc_buf, '>');
 		msg++;
 		pri = (int)strtol((char *)esc_buf+1,(char **)NULL,10);
 
