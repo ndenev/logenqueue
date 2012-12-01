@@ -35,4 +35,48 @@
 int     debug = 0;
 int     verbose = 0;
 
+struct worker_data {
+	int     id;
+};
+
+static const char gelf_magic[3][2] = {
+	{ 0x78, 0x9c }, 
+	{ 0x1f, 0x8b },
+	{ 0x1e, 0x0f },
+};
+
+struct amqp_state_t {
+	amqp_connection_state_t conn;
+	amqp_basic_properties_t props;
+};
+
+static const char *f2s[] = {
+	"kernel",
+	"user-level",
+	"mail",
+	"system daemon",
+	"security/authorization",
+	"syslogd",
+	"lpr",
+	"network news",
+	"uucp",
+	"clock",
+	"security/authorization",
+	"ftp",
+	"ntp",
+	"log audit",
+	"log alert",
+	"clock",
+	"local0",
+	"local1",
+	"local2",
+	"local3",
+	"local4",
+	"local5",
+	"local6",
+	"local7",
+	"GELF"
+};
+
+
 #endif

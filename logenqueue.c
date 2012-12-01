@@ -68,51 +68,9 @@ volatile static int msg_rcvd = 0;
 #define SYSLOG_BUF 1024
 #define GELF_BUF 65536
 
-struct worker_data {
-	int	id;
-};
-
-static const char gelf_magic[3][2] = {
-	{ 0x78, 0x9c }, 
-	{ 0x1f, 0x8b },
-	{ 0x1e, 0x0f },
-};
-
-struct amqp_state_t {
-	amqp_connection_state_t conn;
-	amqp_basic_properties_t props;
-};
-
 static const char *
 fac2str(int facility)
 {
-	static const char *f2s[] = {
-		"kernel",
-		"user-level",
-		"mail",
-		"system daemon",
-		"security/authorization",
-		"syslogd",
-		"lpr",
-		"network news",
-		"uucp",
-		"clock",
-		"security/authorization",
-		"ftp",
-		"ntp",
-		"log audit",
-		"log alert",
-		"clock",
-		"local0",
-		"local1",
-		"local2",
-		"local3",
-		"local4",
-		"local5",
-		"local6",
-		"local7",
-		"GELF"
-	};
 	if (facility > 0 && facility < 23)
 		return (f2s[facility]);
 	else
@@ -189,7 +147,7 @@ syslog_worker(void *arg)
 	u_char	in[SYSLOG_BUF*3];
 	u_char	out[SYSLOG_BUF*3];
 
-	DEBUG("syslog worker thread #%d started\n", self->id);
+	//DEBUG("syslog worker thread #%d started\n", self->id);
 
 	if (amqp_link(&amqp) < 0) {
 		printf("problem with amqp connection in syslog worker #%d\n", self->id);
@@ -300,7 +258,7 @@ gelf_worker(void *arg)
 	u_char	buf[GELF_BUF];
 	int	r;
 
-	DEBUG("gelf worker thread #%d started\n", self->id);
+	//DEBUG("gelf worker thread #%d started\n", self->id);
 
 	if (amqp_link(&amqp) < 0) {
 		printf("problem with amqp connection in gelf worker #%d\n", self->id);
