@@ -44,28 +44,43 @@
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
-#include <zlib.h>
-#include <json/json.h>
-#include <event2/event.h>
-#include <amqp.h>
-#include <amqp_framing.h>
 #include <netdb.h>
 #include <math.h>
+#include <pthread.h>
+#include <pthread_np.h>
+
+#include <zlib.h>
+#include <amqp.h>
+#include <amqp_framing.h>
 
 #include "logenqueue.h"
 #include "config.h"
 
 struct  config  cfg;
 
-static int msg_rcvd = 0;
-static int msg_pub = 0;
-static u_int64_t msg_cnt_ts;
+volatile static int msg_rcvd = 0;
+volatile static int msg_pub = 0;
+volatile static u_int64_t msg_cnt_ts;
 
 #define STATS_TIMEOUT	5
-#define LOOP_YIELD 256
 #define	ZLIBD	0
 #define	GZIPD	1
 #define	CHUNKD	2
+
+enum worker_type {
+	SYSLOG,
+	GELF,
+};
+
+struct worker_data {
+	int	id;
+	enum worker_type type;
+	pthread_cond_t cnd;
+	pthread_mutex_t mtx;
+	u_char	buf[9216];
+	int	buf_len;
+	struct  sockaddr from;
+};
 
 static const char gelf_magic[3][2] = {
 	{ 0x78, 0x9c }, 
@@ -73,8 +88,14 @@ static const char gelf_magic[3][2] = {
 	{ 0x1e, 0x0f },
 };
 
+struct amqp_state_t {
+	amqp_connection_state_t conn;
+	amqp_basic_properties_t props;
+};
+
 static const char *
-fac2str(int facility) {
+fac2str(int facility)
+{
 	static const char *f2s[] = {
 		"kernel",
 		"user-level",
@@ -109,78 +130,106 @@ fac2str(int facility) {
 }
 
 void
-message_stats(int fd __unused, short event __unused, void *arg __unused)
+message_stats(void *arg __unused)
 {
-	struct timeval now;
-	u_int64_t now_usec;
-	gettimeofday(&now, NULL);
-
-	now_usec = ((int64_t)now.tv_sec * 1000000 + now.tv_usec);
-	msg_cnt_ts = now_usec - msg_cnt_ts;
-
- 	printf("incoming msg rate  : %ld msg/sec\n", lroundf(1000000 / ( msg_cnt_ts / msg_rcvd )) );
-	//printf("publish msg rate  : %ld msg/sec\n", lroundf(1000000 / ( msg_cnt_ts / msg_pub )) );
-	
-	msg_rcvd = 0;
-	msg_pub = 0;
-	msg_cnt_ts = now_usec;
-
+	for (;;) {
+		printf("incoming msg rate  : %d msg/sec\n", msg_rcvd / STATS_TIMEOUT);
+		printf("publish msg rate  : %d msg/sec\n", msg_pub / STATS_TIMEOUT);
+		msg_rcvd = 0;
+		msg_pub = 0;
+		sleep(STATS_TIMEOUT);
+	};
 }
 
 void
-got_syslog_msg(int fd, short event, void *arg)
+sighandler_int(int sig)
 {
-	amqp_connection_state_t *conn = arg;
-	amqp_basic_properties_t props;
-	struct sockaddr from;
+	exit(0);
+}
+
+void
+syslog_worker(void *arg)
+{
+	struct worker_data *self = (struct worker_data *)arg;
+
+	struct  amqp_state_t amqp;
 	struct hostent *hp;
-	char *host;
-	char ip[256];
+	char 	host[256];
 	char *msg, *msg2;
-	unsigned int ip_len;
-	char buf[8129];
-	int r;
+	u_char esc_buf[8129*2];
+	int r, i1, i2;
 	int pri;
 	struct tm tim;
 	time_t ts;
 	amqp_bytes_t msgb;
 	int flush;
 	z_stream strm;
-	u_char in[9216];
+	u_char in[9216*2];
 	u_char out[9216*2];
 
+	printf("syslog worker thread #%d started\n", self->id);
 
-	if (event != EV_READ) {
-		fprintf(stderr, "not read event?\n");
-		return;
-	}
+	amqp.props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+	amqp.props.delivery_mode = 2; /* persistent delivery mode */
+	amqp.props.content_type = amqp_cstring_bytes("application/octet-stream");
 
-	hp = NULL;
+	amqp.conn = amqp_new_connection();
+	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
+	amqp_set_sockfd(amqp.conn, cfg.amqp.fd);
+	amqp_login(amqp.conn, cfg.amqp.vhost, 0, 131072, 0,
+		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
+	amqp_channel_open(amqp.conn, 1);
+	amqp_get_rpc_reply(amqp.conn);
 
-	ip_len = sizeof(from);
-	int loop = 0;	
-	while ((r = recvfrom(fd, buf, sizeof(buf), 0, &from, &ip_len)) > 0) {
-		msg_rcvd++;
-		if ((hp = gethostbyaddr((const void *)&from.sa_data+2, sizeof(struct in_addr), AF_INET))) {
-			host = hp->h_name;
-		} else {
-			inet_ntop(from.sa_family, from.sa_data+2, ip, sizeof(ip));
-			host = ip;
+
+	for (;;) {
+		//pthread_mutex_lock(&self->mtx);
+		//pthread_cond_wait(&self->cnd, &self->mtx);
+
+		unsigned int ip_len;
+		r = recvfrom(cfg.syslog.fd, self->buf, sizeof(self->buf), 0, &self->from, &ip_len);
+		if (r < 0) {
+			printf("recvfrom problem\n");
+			continue;
 		}
+		if (r == 0) {
+			printf("zero data read\n");
+		}
+		self->buf[r] = '\0';
+		self->buf_len = r;
+		msg_rcvd++;
 
-		buf[r] = '\0';
+		hp = NULL;
+		if ((hp = gethostbyaddr((const void *)&self->from.sa_data+2, sizeof(struct in_addr), AF_INET)))
+			strncpy(host, hp->h_name, sizeof(host));
+		else
+			inet_ntop(self->from.sa_family, self->from.sa_data+2, host, sizeof(host));
 
-		props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
-		props.delivery_mode = 2; /* persistent delivery mode */
-		props.content_type = amqp_cstring_bytes("application/octet-stream");
+		/* escape back slashes and quotes in json */
+		i2 = 0;
+		for (i1 = 0; i1 < strlen((char *)self->buf); i1++) {
+			/* escape control chars */
+			if (self->buf[i1] < 0x1f) {
+				r = snprintf((char *)esc_buf+i2,
+						sizeof(esc_buf) - i2,
+						"\\u%04x",
+						self->buf[i1]);
+				i2 += r;
+			} else {
+				if (self->buf[i1] == '\\' || self->buf[i1] == '"')
+					esc_buf[i2++] = '\\';
+				esc_buf[i2++] = self->buf[i1];
+			}
+		}
+		esc_buf[i2] = '\0';
 
-		if (buf[0] != '<') {
-			printf("invalid syslog format from (%s). msg: \"%s\"\n", host, buf);
+		if (esc_buf[0] != '<') {
+			printf("invalid syslog format from (%s). msg: \"%s\"\n", host, esc_buf);
 			return;
 		}
-		msg = strchr(buf, '>');
+		msg = strchr((char *)esc_buf, '>');
 		msg++;
-		pri = (int)strtol(buf+1,(char **)NULL,10);
+		pri = (int)strtol((char *)esc_buf+1,(char **)NULL,10);
 
 		int severity = pri & 0x07;
 		int facility = pri >> 3;
@@ -196,37 +245,21 @@ got_syslog_msg(int fd, short event, void *arg)
 			ts = time(NULL);
 		}
 
-		json_object * jobj = json_object_new_object();
-
-		json_object *j_version = json_object_new_string("1.0");
-		json_object *j_host = json_object_new_string(host);
-		json_object *j_short_message = json_object_new_string(msg);
-		json_object *j_full_message = json_object_new_string(buf);
-		json_object *j_timestamp = json_object_new_double(ts);
-		json_object *j_level = json_object_new_int(severity);
-		json_object *j_facility = json_object_new_string(fac2str(facility));
-		json_object *j_file = json_object_new_string("");
-		json_object *j_line = json_object_new_int(0);
-
-		json_object_object_add(jobj,"version", j_version);
-		json_object_object_add(jobj,"host", j_host);
-		json_object_object_add(jobj,"short_message", j_short_message);
-		json_object_object_add(jobj,"full_message", j_full_message);
-		json_object_object_add(jobj,"timestamp", j_timestamp);
-		json_object_object_add(jobj,"level", j_level);
-		json_object_object_add(jobj,"facility", j_facility);
-		json_object_object_add(jobj,"file", j_file);
-		json_object_object_add(jobj,"line", j_line);
+		/* ugly home grown json */
+		snprintf((char *)in, sizeof(in),
+			"{ \"version\": \"%s\", \"host\": \"%s\","
+			"\"short_message\": \"%s\", \"full_message\": \"%s\","
+			"\"timestamp\": \"%ld\", \"level\": %d,"
+			"\"facility\": \"%s\", \"file\": \"%s\","
+			"\"line\": %d }",
+			"1.0", host, msg, esc_buf, (long int)ts,
+			severity, fac2str(facility), "", 0);
 
 		/* allocate deflate state */
 		strm.zalloc = Z_NULL;
 		strm.zfree = Z_NULL;
 		strm.opaque = Z_NULL;
 		deflateInit(&strm, Z_DEFAULT_COMPRESSION);
-
-		strncpy((char *)in, json_object_to_json_string(jobj), sizeof(in));
-	
-		json_object_put(jobj);
 
 		strm.avail_in = strlen((char *)in);
 		strm.next_in = in;
@@ -240,70 +273,130 @@ got_syslog_msg(int fd, short event, void *arg)
 		msgb.len = (9216*2) - strm.avail_out;
 		msgb.bytes = out;
 
-		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+		amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
-				    &props, msgb);
-		msg_pub++;
-		loop++;
+				    &amqp.props, msgb);
 
-		if (loop > LOOP_YIELD)
-			return;
+		msg_pub++;
+		//pthread_mutex_unlock(&self->mtx);
 	}
-		return;
+
 }
 
 void
-got_gelf_msg(int fd, short event, void *arg)
+syslog_listener(void *arg)
 {
-	amqp_connection_state_t *conn = arg;
-	amqp_basic_properties_t props;
-	char buf[8129];
+	struct worker_data *thr = (struct worker_data *)arg;
+	unsigned int ip_len;
 	int r;
+	int t_cur, t_max;
+
+	t_cur = 0;
+	t_max = cfg.syslog.workers - 1;
+	ip_len = sizeof(struct sockaddr);
+
+	DEBUG("SYSLOG listener thread started\n");
+
+	for (;;) {
+		if(!pthread_mutex_trylock(&(thr+t_cur)->mtx)) {
+			r = recvfrom(cfg.syslog.fd, (thr+t_cur)->buf, sizeof((thr+t_cur)->buf), 0, &(thr+t_cur)->from, &ip_len);
+			if (r < 0)
+				continue;
+			(thr+t_cur)->buf[r] = '\0';
+			(thr+t_cur)->buf_len = r;
+			msg_rcvd++;
+			pthread_mutex_unlock(&(thr+t_cur)->mtx);
+			pthread_cond_signal(&(thr+t_cur)->cnd);
+		}
+		if (t_cur < t_max)
+			t_cur++;
+		else
+			t_cur = 0;
+	}
+}
+
+void
+gelf_worker(void *arg)
+{
+	struct worker_data *self = (struct worker_data *)arg;
+
+	struct  amqp_state_t amqp;
 	amqp_bytes_t msgb;
 
-	if (event != EV_READ) {
-		fprintf(stderr, "not read event?\n");
-		return;
-	}
+	printf("gelf worker thread #%d started\n", self->id);
+	amqp.props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+	amqp.props.delivery_mode = 2; /* persistent delivery mode */
+	amqp.props.content_type = amqp_cstring_bytes("application/octet-stream");
+	amqp.conn = amqp_new_connection();
+	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
+	amqp_set_sockfd(amqp.conn, cfg.amqp.fd);
+	amqp_login(amqp.conn, cfg.amqp.vhost, 0, 131072, 0,
+		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
+	amqp_channel_open(amqp.conn, 1);
+	amqp_get_rpc_reply(amqp.conn);
 
-	int loop = 0;
-	while ((r = recvfrom(fd, buf, sizeof(buf), 0, NULL, NULL)) > 0) {
+	for (;;) {
+		pthread_mutex_lock(&self->mtx);
+                pthread_cond_wait(&self->cnd, &self->mtx);
 
-#define	GELF_MAGIC(type)	bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
+#define	GELF_MAGIC(type)	bcmp(self->buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
 		if (!GELF_MAGIC(ZLIBD)) {
-			DEBUG("Received ZLIB'd GELF message.\n");
+			//DEBUG("Received ZLIB'd GELF message.\n");
 		} else if (!GELF_MAGIC(GZIPD)) {
-			DEBUG("Received GZIP'd GELF message.\n");
+			//DEBUG("Received GZIP'd GELF message.\n");
 		} else if (!GELF_MAGIC(CHUNKD)) {
-			DEBUG("Received CHUNKED GELF message.\n");
+			//DEBUG("Received CHUNKED GELF message.\n");
 		} else {
 			LOG("Unknown GELF type. Maybe RAW? Bailing out.");
 			continue;
 		}
 
-		props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
-		props.delivery_mode = 2; /* persistent delivery mode */
-		props.content_type = amqp_cstring_bytes("application/octet-stream");
+		msgb.len = self->buf_len;
+		msgb.bytes = self->buf;
 
-		msgb.len = r;
-		msgb.bytes = buf;
-
-		amqp_basic_publish(*conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+		amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
-				    &props, msgb);
-		msg_pub++;
-		loop++;
-		if (loop > LOOP_YIELD) 
-			return;
-	}
+				    &amqp.props, msgb);
 
-	return;
+		msg_pub++;
+
+
+	}
 }
 
-int udp_listen(char *bindaddr, u_int port)
+void
+gelf_listener(void *arg)
 {
-	int udpsock_fd, nreqflags, noptval, ret;
+        struct worker_data *thr = (struct worker_data *)arg;
+	int r;
+        int t_cur, t_max;
+
+	DEBUG("GELF listener thread started\n");
+
+        t_cur = 0;
+        t_max = cfg.gelf.workers - 1;
+
+	for (;;) {
+                if(!pthread_mutex_trylock(&(thr+t_cur)->mtx)) {
+			r = recvfrom(cfg.gelf.fd, &(thr+t_cur)->buf, sizeof((thr+t_cur)->buf), 0, NULL, NULL);
+			if (r < 0)
+				continue;
+			msg_rcvd++;
+		}
+                if (t_cur < t_max)
+                        t_cur++;
+                else
+                        t_cur = 0;
+		pthread_mutex_unlock(&(thr+t_cur)->mtx);
+		pthread_cond_signal(&(thr+t_cur)->cnd);
+	}
+}
+
+int
+udp_listen(char *bindaddr, u_int port)
+{
+	int udpsock_fd, noptval, ret;
 	struct sockaddr_in staddr;
 
 	udpsock_fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -313,12 +406,6 @@ int udp_listen(char *bindaddr, u_int port)
 		exit(-1);
 	}
 
-	nreqflags = fcntl(udpsock_fd, F_GETFL, 0);
-	ret = fcntl(udpsock_fd, F_SETFL, nreqflags | O_NONBLOCK);
-	if (ret == -1) {
-		printf("error calling fcntl F_SETFL: %s\n", strerror(errno));
-		exit(-1);
-	}
 	memset(&staddr, 0, sizeof(struct sockaddr_in));
 	staddr.sin_addr.s_addr = inet_addr(bindaddr);
 	staddr.sin_port = htons(port);
@@ -346,15 +433,17 @@ int udp_listen(char *bindaddr, u_int port)
 	return(udpsock_fd);
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
-	struct	event *eve;
-	struct	event_base *base;
-	struct	timeval tv = { STATS_TIMEOUT, 0 };
-	struct	timeval ts;
 	int	pid;
+	int	i;
+	struct  amqp_state_t amqp;
+	pthread_t syslog_listen_thr, gelf_listen_thr, stats_thread, *syslog_workers, *gelf_workers;
+	struct worker_data *syslog_workers_data, *gelf_workers_data;
+	char tname[32];
 
-	amqp_connection_state_t conn;
+	signal(SIGINT, sighandler_int);
 
 	parse_opts(&argc, &argv);
 
@@ -372,42 +461,66 @@ int main(int argc, char **argv)
 		}
 		setsid();
 	}
+	
+	VERBOSE("syslog listen : %s:%d\n", cfg.syslog.bind, cfg.syslog.port);
+	VERBOSE("gelf listen : %s:%d\n", cfg.gelf.bind, cfg.gelf.port);
 
-	base = event_base_new();
+	cfg.syslog.fd = udp_listen(cfg.syslog.bind, cfg.syslog.port);
+	cfg.gelf.fd = udp_listen(cfg.gelf.bind, cfg.gelf.port);
 
-	cfg.syslog.fd = udp_listen(cfg.syslog.bind,
-			cfg.syslog.port);
-	cfg.gelf.fd = udp_listen(cfg.gelf.bind,
-			cfg.gelf.port);
-
-	conn = amqp_new_connection();
+	amqp.conn = amqp_new_connection();
 	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
-	amqp_set_sockfd(conn, cfg.amqp.fd);
-	amqp_login(conn, cfg.amqp.vhost, 0, 131072, 0,
+	amqp_set_sockfd(amqp.conn, cfg.amqp.fd);
+	amqp_login(amqp.conn, cfg.amqp.vhost, 0, 131072, 0,
 		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
-	amqp_channel_open(conn, 1);
-	amqp_get_rpc_reply(conn);
+	amqp_channel_open(amqp.conn, 1);
+	amqp_get_rpc_reply(amqp.conn);
 
-	amqp_exchange_declare(conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+	amqp_exchange_declare(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 				       amqp_cstring_bytes(cfg.amqp.exch_type),
 				       0,
 				       0,
 				       amqp_empty_table);
 
-	eve = event_new(base, cfg.syslog.fd, EV_READ | EV_PERSIST, got_syslog_msg, &conn);
-	event_add(eve, NULL);
+	syslog_workers = calloc(cfg.syslog.workers, sizeof(pthread_t));
+	gelf_workers = calloc(cfg.gelf.workers, sizeof(pthread_t));
 
-	eve = event_new(base, cfg.gelf.fd, EV_READ | EV_PERSIST, got_gelf_msg, &conn);
-	event_add(eve, NULL);
+	syslog_workers_data = calloc(cfg.syslog.workers, sizeof(struct worker_data));
+	gelf_workers_data = calloc(cfg.gelf.workers, sizeof(struct worker_data));
 
-	if (verbose || debug) {
-		eve = event_new(base, -1, EV_PERSIST, message_stats, NULL);
-		event_add(eve, &tv);
+	for (i = 0; i < cfg.syslog.workers; i++) {
+		pthread_mutex_init(&(syslog_workers_data+i)->mtx, NULL);
+		pthread_cond_init(&(syslog_workers_data+i)->cnd, NULL);
+		(syslog_workers_data+i)->id = i;
+		(syslog_workers_data+i)->type = SYSLOG;
+		pthread_create(syslog_workers+i, NULL, (void *)&syslog_worker, syslog_workers_data+i);
+		snprintf(tname, sizeof(tname), "syslog_worker[%d]", i);
+		pthread_set_name_np(*(syslog_workers+i), tname);
 	}
 
-	gettimeofday(&ts, NULL);
-	msg_cnt_ts = ((int64_t)ts.tv_sec * 1000000 + ts.tv_usec);
-	event_base_dispatch(base);
+	for (i = 0; i < cfg.gelf.workers; i++) {
+		pthread_mutex_init(&(gelf_workers_data+i)->mtx, NULL);
+		pthread_cond_init(&(gelf_workers_data+i)->cnd, NULL);
+		(gelf_workers_data+i)->id = i;
+		(gelf_workers_data+i)->type = GELF;
+		pthread_create(gelf_workers+i, NULL, (void *)&gelf_worker, gelf_workers_data+i);
+		snprintf(tname, sizeof(tname), "gelf_worker[%d]", i);
+		pthread_set_name_np(*(gelf_workers+i), tname);
+	}
+
+	//pthread_create(&syslog_listen_thr, NULL, (void *)&syslog_listener, syslog_workers_data);
+	//snprintf(tname, sizeof(tname), "syslog_listener");
+	//pthread_set_name_np(syslog_listen_thr, tname);
+
+	pthread_create(&gelf_listen_thr, NULL, (void *)&gelf_listener, gelf_workers_data);
+	snprintf(tname, sizeof(tname), "gelf_listener");
+	pthread_set_name_np(gelf_listen_thr, tname);
+
+	pthread_create(&stats_thread, NULL, (void *)&message_stats, NULL);
+	snprintf(tname, sizeof(tname), "stats_thread");
+	pthread_set_name_np(stats_thread, tname);
+
+	pthread_join(stats_thread, NULL);
 
 	return 0;
 }

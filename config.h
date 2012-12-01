@@ -54,12 +54,14 @@ struct syslog_listener {
 	char	bind[HOST_NAME_MAX];
 	u_int	port;
 	int	fd;
+	int	workers;
 };
 
 struct gelf_listener {
 	char	bind[HOST_NAME_MAX];
 	u_int	port;
 	int	fd;
+	int	workers;
 
 };
 
