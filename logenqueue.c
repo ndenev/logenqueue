@@ -59,9 +59,8 @@
 struct  config  cfg;
 
 volatile static int msg_rcvd = 0;
-volatile static int msg_pub = 0;
 
-#define STATS_TIMEOUT	5
+#define STATS_TIMEOUT 1
 #define	ZLIBD	0
 #define	GZIPD	1
 #define	CHUNKD	2
@@ -125,9 +124,7 @@ message_stats(void *arg __unused)
 {
 	for (;;) {
 		VERBOSE("incoming msg rate  : %d msg/sec\n", msg_rcvd / STATS_TIMEOUT);
-		VERBOSE("publish msg rate  : %d msg/sec\n", msg_pub / STATS_TIMEOUT);
 		msg_rcvd = 0;
-		msg_pub = 0;
 		sleep(STATS_TIMEOUT);
 	};
 }
@@ -266,7 +263,6 @@ syslog_worker(void *arg)
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 				    &amqp.props, msgb);
 
-		msg_pub++;
 	}
 
 }
@@ -323,9 +319,6 @@ gelf_worker(void *arg)
 		amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 				    &amqp.props, msgb);
-
-		msg_pub++;
-
 
 	}
 }
