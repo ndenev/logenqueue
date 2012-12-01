@@ -82,20 +82,16 @@ int parse_config()
 			CFGCPY(cfg.amqp.exch_type);
 		} else if (strcasecmp(key, "syslog_listen") == 0) {
 			CFGCPY(cfg.syslog.bind);
-			printf("listen on %s\n", cfg.syslog.bind);
 		} else if (strcasecmp(key, "syslog_port") == 0) {
 			CFGNCPY(cfg.syslog.port);
 		} else if (strcasecmp(key, "syslog_workers") == 0) {
 			CFGNCPY(cfg.syslog.workers);
-			printf("workers %d\n", cfg.syslog.workers);
 		} else if (strcasecmp(key, "gelf_listen") == 0) {
 			CFGCPY(cfg.gelf.bind);
-			printf("listen on %s\n", cfg.gelf.bind);
 		} else if (strcasecmp(key, "gelf_port") == 0) {
 			CFGNCPY(cfg.gelf.port);
 		} else if (strcasecmp(key, "gelf_workers") == 0) {
 			CFGNCPY(cfg.gelf.workers);
-			printf("workers %d\n", cfg.gelf.workers);
 		}
 	}
 
