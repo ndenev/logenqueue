@@ -60,26 +60,16 @@ struct  config  cfg;
 
 volatile static int msg_rcvd = 0;
 volatile static int msg_pub = 0;
-volatile static u_int64_t msg_cnt_ts;
 
 #define STATS_TIMEOUT	5
 #define	ZLIBD	0
 #define	GZIPD	1
 #define	CHUNKD	2
 
-enum worker_type {
-	SYSLOG,
-	GELF,
-};
+#define BUFLEN 9216
 
 struct worker_data {
 	int	id;
-	enum worker_type type;
-	pthread_cond_t cnd;
-	pthread_mutex_t mtx;
-	u_char	buf[9216];
-	int	buf_len;
-	struct  sockaddr from;
 };
 
 static const char gelf_magic[3][2] = {
@@ -133,8 +123,8 @@ void
 message_stats(void *arg __unused)
 {
 	for (;;) {
-		printf("incoming msg rate  : %d msg/sec\n", msg_rcvd / STATS_TIMEOUT);
-		printf("publish msg rate  : %d msg/sec\n", msg_pub / STATS_TIMEOUT);
+		VERBOSE("incoming msg rate  : %d msg/sec\n", msg_rcvd / STATS_TIMEOUT);
+		VERBOSE("publish msg rate  : %d msg/sec\n", msg_pub / STATS_TIMEOUT);
 		msg_rcvd = 0;
 		msg_pub = 0;
 		sleep(STATS_TIMEOUT);
@@ -152,22 +142,25 @@ syslog_worker(void *arg)
 {
 	struct worker_data *self = (struct worker_data *)arg;
 
-	struct  amqp_state_t amqp;
-	struct hostent *hp;
+	struct	amqp_state_t amqp;
+	struct	hostent *hp;
+	struct  sockaddr from;
+	u_int ip_len;
 	char 	host[256];
-	char *msg, *msg2;
-	u_char esc_buf[8129*2];
-	int r, i1, i2;
-	int pri;
-	struct tm tim;
-	time_t ts;
+	char	*msg, *msg2;
+	u_char	buf[8129];
+	u_char	esc_buf[8129*2];
+	int	r, i1, i2;
+	int	pri;
+	struct	tm tim;
+	time_t	ts;
 	amqp_bytes_t msgb;
-	int flush;
+	int	flush;
 	z_stream strm;
-	u_char in[9216*2];
-	u_char out[9216*2];
+	u_char	in[9216*2];
+	u_char	out[9216*2];
 
-	printf("syslog worker thread #%d started\n", self->id);
+	DEBUG("syslog worker thread #%d started\n", self->id);
 
 	amqp.props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
 	amqp.props.delivery_mode = 2; /* persistent delivery mode */
@@ -183,11 +176,7 @@ syslog_worker(void *arg)
 
 
 	for (;;) {
-		//pthread_mutex_lock(&self->mtx);
-		//pthread_cond_wait(&self->cnd, &self->mtx);
-
-		unsigned int ip_len;
-		r = recvfrom(cfg.syslog.fd, self->buf, sizeof(self->buf), 0, &self->from, &ip_len);
+		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), 0, &from, &ip_len);
 		if (r < 0) {
 			printf("recvfrom problem\n");
 			continue;
@@ -195,36 +184,35 @@ syslog_worker(void *arg)
 		if (r == 0) {
 			printf("zero data read\n");
 		}
-		self->buf[r] = '\0';
-		self->buf_len = r;
+		buf[r] = '\0';
 		msg_rcvd++;
 
 		hp = NULL;
-		if ((hp = gethostbyaddr((const void *)&self->from.sa_data+2, sizeof(struct in_addr), AF_INET)))
+		if ((hp = gethostbyaddr((const void *)&from.sa_data+2, sizeof(struct in_addr), AF_INET)))
 			strncpy(host, hp->h_name, sizeof(host));
 		else
-			inet_ntop(self->from.sa_family, self->from.sa_data+2, host, sizeof(host));
+			inet_ntop(from.sa_family, from.sa_data+2, host, sizeof(host));
 
 		/* escape back slashes and quotes in json */
 		i2 = 0;
-		for (i1 = 0; i1 < strlen((char *)self->buf); i1++) {
+		for (i1 = 0; i1 < strlen((char *)buf); i1++) {
 			/* escape control chars */
-			if (self->buf[i1] < 0x1f) {
+			if (buf[i1] < 0x1f) {
 				r = snprintf((char *)esc_buf+i2,
 						sizeof(esc_buf) - i2,
 						"\\u%04x",
-						self->buf[i1]);
+						buf[i1]);
 				i2 += r;
 			} else {
-				if (self->buf[i1] == '\\' || self->buf[i1] == '"')
+				if (buf[i1] == '\\' || buf[i1] == '"')
 					esc_buf[i2++] = '\\';
-				esc_buf[i2++] = self->buf[i1];
+				esc_buf[i2++] = buf[i1];
 			}
 		}
 		esc_buf[i2] = '\0';
 
 		if (esc_buf[0] != '<') {
-			printf("invalid syslog format from (%s). msg: \"%s\"\n", host, esc_buf);
+			VERBOSE("invalid syslog format from (%s). msg: \"%s\"\n", host, esc_buf);
 			return;
 		}
 		msg = strchr((char *)esc_buf, '>');
@@ -278,41 +266,8 @@ syslog_worker(void *arg)
 				    &amqp.props, msgb);
 
 		msg_pub++;
-		//pthread_mutex_unlock(&self->mtx);
 	}
 
-}
-
-void
-syslog_listener(void *arg)
-{
-	struct worker_data *thr = (struct worker_data *)arg;
-	unsigned int ip_len;
-	int r;
-	int t_cur, t_max;
-
-	t_cur = 0;
-	t_max = cfg.syslog.workers - 1;
-	ip_len = sizeof(struct sockaddr);
-
-	DEBUG("SYSLOG listener thread started\n");
-
-	for (;;) {
-		if(!pthread_mutex_trylock(&(thr+t_cur)->mtx)) {
-			r = recvfrom(cfg.syslog.fd, (thr+t_cur)->buf, sizeof((thr+t_cur)->buf), 0, &(thr+t_cur)->from, &ip_len);
-			if (r < 0)
-				continue;
-			(thr+t_cur)->buf[r] = '\0';
-			(thr+t_cur)->buf_len = r;
-			msg_rcvd++;
-			pthread_mutex_unlock(&(thr+t_cur)->mtx);
-			pthread_cond_signal(&(thr+t_cur)->cnd);
-		}
-		if (t_cur < t_max)
-			t_cur++;
-		else
-			t_cur = 0;
-	}
 }
 
 void
@@ -322,8 +277,11 @@ gelf_worker(void *arg)
 
 	struct  amqp_state_t amqp;
 	amqp_bytes_t msgb;
+	u_char	buf[BUFLEN];
+	int	r;
 
-	printf("gelf worker thread #%d started\n", self->id);
+	DEBUG("gelf worker thread #%d started\n", self->id);
+
 	amqp.props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
 	amqp.props.delivery_mode = 2; /* persistent delivery mode */
 	amqp.props.content_type = amqp_cstring_bytes("application/octet-stream");
@@ -336,10 +294,16 @@ gelf_worker(void *arg)
 	amqp_get_rpc_reply(amqp.conn);
 
 	for (;;) {
-		pthread_mutex_lock(&self->mtx);
-                pthread_cond_wait(&self->cnd, &self->mtx);
-
-#define	GELF_MAGIC(type)	bcmp(self->buf, gelf_magic[type], sizeof(gelf_magic[type]))
+		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
+		if (r < 0) {
+			printf("recvfrom problem\n");
+			continue;
+		}
+		if (r == 0) {
+			printf("zero data read\n");
+		}
+		msg_rcvd++;
+#define	GELF_MAGIC(type)	bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
 		if (!GELF_MAGIC(ZLIBD)) {
 			//DEBUG("Received ZLIB'd GELF message.\n");
@@ -352,8 +316,8 @@ gelf_worker(void *arg)
 			continue;
 		}
 
-		msgb.len = self->buf_len;
-		msgb.bytes = self->buf;
+		msgb.len = r;
+		msgb.bytes = buf;
 
 		amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
@@ -362,34 +326,6 @@ gelf_worker(void *arg)
 		msg_pub++;
 
 
-	}
-}
-
-void
-gelf_listener(void *arg)
-{
-        struct worker_data *thr = (struct worker_data *)arg;
-	int r;
-        int t_cur, t_max;
-
-	DEBUG("GELF listener thread started\n");
-
-        t_cur = 0;
-        t_max = cfg.gelf.workers - 1;
-
-	for (;;) {
-                if(!pthread_mutex_trylock(&(thr+t_cur)->mtx)) {
-			r = recvfrom(cfg.gelf.fd, &(thr+t_cur)->buf, sizeof((thr+t_cur)->buf), 0, NULL, NULL);
-			if (r < 0)
-				continue;
-			msg_rcvd++;
-		}
-                if (t_cur < t_max)
-                        t_cur++;
-                else
-                        t_cur = 0;
-		pthread_mutex_unlock(&(thr+t_cur)->mtx);
-		pthread_cond_signal(&(thr+t_cur)->cnd);
 	}
 }
 
@@ -439,7 +375,7 @@ main(int argc, char **argv)
 	int	pid;
 	int	i;
 	struct  amqp_state_t amqp;
-	pthread_t syslog_listen_thr, gelf_listen_thr, stats_thread, *syslog_workers, *gelf_workers;
+	pthread_t stats_thread, *syslog_workers, *gelf_workers;
 	struct worker_data *syslog_workers_data, *gelf_workers_data;
 	char tname[32];
 
@@ -456,14 +392,14 @@ main(int argc, char **argv)
 			exit(-1);
 		}
 		if (pid > 0) {
-			printf("logenqueue started and going into background\n");
+			VERBOSE("logenqueue started and going into background\n");
 			_Exit(0);
 		}
 		setsid();
 	}
 	
-	VERBOSE("syslog listen : %s:%d\n", cfg.syslog.bind, cfg.syslog.port);
-	VERBOSE("gelf listen : %s:%d\n", cfg.gelf.bind, cfg.gelf.port);
+	DEBUG("syslog listen : %s:%d\n", cfg.syslog.bind, cfg.syslog.port);
+	DEBUG("gelf listen : %s:%d\n", cfg.gelf.bind, cfg.gelf.port);
 
 	cfg.syslog.fd = udp_listen(cfg.syslog.bind, cfg.syslog.port);
 	cfg.gelf.fd = udp_listen(cfg.gelf.bind, cfg.gelf.port);
@@ -489,32 +425,18 @@ main(int argc, char **argv)
 	gelf_workers_data = calloc(cfg.gelf.workers, sizeof(struct worker_data));
 
 	for (i = 0; i < cfg.syslog.workers; i++) {
-		pthread_mutex_init(&(syslog_workers_data+i)->mtx, NULL);
-		pthread_cond_init(&(syslog_workers_data+i)->cnd, NULL);
 		(syslog_workers_data+i)->id = i;
-		(syslog_workers_data+i)->type = SYSLOG;
 		pthread_create(syslog_workers+i, NULL, (void *)&syslog_worker, syslog_workers_data+i);
 		snprintf(tname, sizeof(tname), "syslog_worker[%d]", i);
 		pthread_set_name_np(*(syslog_workers+i), tname);
 	}
 
 	for (i = 0; i < cfg.gelf.workers; i++) {
-		pthread_mutex_init(&(gelf_workers_data+i)->mtx, NULL);
-		pthread_cond_init(&(gelf_workers_data+i)->cnd, NULL);
 		(gelf_workers_data+i)->id = i;
-		(gelf_workers_data+i)->type = GELF;
 		pthread_create(gelf_workers+i, NULL, (void *)&gelf_worker, gelf_workers_data+i);
 		snprintf(tname, sizeof(tname), "gelf_worker[%d]", i);
 		pthread_set_name_np(*(gelf_workers+i), tname);
 	}
-
-	//pthread_create(&syslog_listen_thr, NULL, (void *)&syslog_listener, syslog_workers_data);
-	//snprintf(tname, sizeof(tname), "syslog_listener");
-	//pthread_set_name_np(syslog_listen_thr, tname);
-
-	pthread_create(&gelf_listen_thr, NULL, (void *)&gelf_listener, gelf_workers_data);
-	snprintf(tname, sizeof(tname), "gelf_listener");
-	pthread_set_name_np(gelf_listen_thr, tname);
 
 	pthread_create(&stats_thread, NULL, (void *)&message_stats, NULL);
 	snprintf(tname, sizeof(tname), "stats_thread");
