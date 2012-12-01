@@ -158,8 +158,8 @@ syslog_worker(void *arg)
 	amqp_bytes_t msgb;
 	int	flush;
 	z_stream strm;
-	u_char	in[SYSLOG_BUF*2];
-	u_char	out[SYSLOG_BUF*2];
+	u_char	in[SYSLOG_BUF*3];
+	u_char	out[SYSLOG_BUF*3];
 
 	DEBUG("syslog worker thread #%d started\n", self->id);
 
@@ -252,14 +252,14 @@ syslog_worker(void *arg)
 
 		strm.avail_in = strlen((char *)in);
 		strm.next_in = in;
-		strm.avail_out = SYSLOG_BUF*2;
+		strm.avail_out = SYSLOG_BUF*3;
 		strm.next_out = out;
 		flush = Z_FINISH;
 		deflate(&strm, flush);
 
 		(void)deflateEnd(&strm);
 
-		msgb.len = (SYSLOG_BUF*2) - strm.avail_out;
+		msgb.len = (SYSLOG_BUF*3) - strm.avail_out;
 		msgb.bytes = out;
 
 		amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
