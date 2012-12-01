@@ -106,9 +106,10 @@ usage()
 	printf("	-d	--debug		enable debug mode\n");
 	printf("	-h	--help		this help screen\n");
 	printf("	-v	--verbose	enable verbose mode\n");
+	exit(0);
 }
 
-void
+int
 parse_opts(int *argc, char ***argv)
 {
 	int opt;
@@ -135,7 +136,7 @@ parse_opts(int *argc, char ***argv)
                                 break;
 			default:
 				usage();
-				exit(0);
+				/* does not return */
 				break;
 		}
 	}
@@ -143,6 +144,7 @@ parse_opts(int *argc, char ***argv)
 	*argv += optind;
 	if (*argc > 0) {
 		printf("too many arguments\n");
-		exit(-1);
+		return(-1);
 	}
+	return(0);
 }

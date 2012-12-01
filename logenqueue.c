@@ -119,6 +119,37 @@ fac2str(int facility)
 		return (f2s[24]);
 }
 
+int
+amqp_link(struct amqp_state_t *amqp)
+{
+	amqp_rpc_reply_t r;
+
+	amqp->props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+	amqp->props.delivery_mode = 2; /* persistent delivery mode */
+	amqp->props.content_type = amqp_cstring_bytes("application/octet-stream");
+
+	amqp->conn = amqp_new_connection();
+	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
+	if (cfg.amqp.fd < 0) {
+		printf("unable to open amqp socket!\n");
+		return(-1);
+	}
+	amqp_set_sockfd(amqp->conn, cfg.amqp.fd);
+	r = amqp_login(amqp->conn, cfg.amqp.vhost, 0, 131072, 0,
+		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
+	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
+		printf("problem logging in amqp broker\n");
+		return(-1);
+	}
+	amqp_channel_open(amqp->conn, 1);
+	r = amqp_get_rpc_reply(amqp->conn);
+	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
+		printf("problem opening amqp channel\n");
+		return(-1);
+	}
+	return(0);
+}
+
 void
 message_stats(void *arg __unused)
 {
@@ -160,18 +191,10 @@ syslog_worker(void *arg)
 
 	DEBUG("syslog worker thread #%d started\n", self->id);
 
-	amqp.props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
-	amqp.props.delivery_mode = 2; /* persistent delivery mode */
-	amqp.props.content_type = amqp_cstring_bytes("application/octet-stream");
-
-	amqp.conn = amqp_new_connection();
-	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
-	amqp_set_sockfd(amqp.conn, cfg.amqp.fd);
-	amqp_login(amqp.conn, cfg.amqp.vhost, 0, 131072, 0,
-		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
-	amqp_channel_open(amqp.conn, 1);
-	amqp_get_rpc_reply(amqp.conn);
-
+	if (amqp_link(&amqp) < 0) {
+		printf("problem with amqp connection in syslog worker #%d\n", self->id);
+		return;
+	}
 
 	for (;;) {
 		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), 0, &from, &ip_len);
@@ -279,16 +302,10 @@ gelf_worker(void *arg)
 
 	DEBUG("gelf worker thread #%d started\n", self->id);
 
-	amqp.props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
-	amqp.props.delivery_mode = 2; /* persistent delivery mode */
-	amqp.props.content_type = amqp_cstring_bytes("application/octet-stream");
-	amqp.conn = amqp_new_connection();
-	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
-	amqp_set_sockfd(amqp.conn, cfg.amqp.fd);
-	amqp_login(amqp.conn, cfg.amqp.vhost, 0, 131072, 0,
-		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
-	amqp_channel_open(amqp.conn, 1);
-	amqp_get_rpc_reply(amqp.conn);
+	if (amqp_link(&amqp) < 0) {
+		printf("problem with amqp connection in gelf worker #%d\n", self->id);
+		return;
+	}
 
 	for (;;) {
 		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
@@ -368,14 +385,18 @@ main(int argc, char **argv)
 {
 	int	pid;
 	int	i;
-	struct  amqp_state_t amqp;
+	struct	amqp_state_t amqp;
 	pthread_t stats_thread, *syslog_workers, *gelf_workers;
-	struct worker_data *syslog_workers_data, *gelf_workers_data;
-	char tname[32];
+	struct	worker_data *syslog_workers_data, *gelf_workers_data;
+	char	tname[32];
+	amqp_rpc_reply_t r;
 
 	signal(SIGINT, sighandler_int);
 
-	parse_opts(&argc, &argv);
+	if (parse_opts(&argc, &argv) < 0) {
+		printf("problem parsing command line arguments/options\n");
+		exit(-1);
+	}
 
 	parse_config();
 	
@@ -398,19 +419,19 @@ main(int argc, char **argv)
 	cfg.syslog.fd = udp_listen(cfg.syslog.bind, cfg.syslog.port);
 	cfg.gelf.fd = udp_listen(cfg.gelf.bind, cfg.gelf.port);
 
-	amqp.conn = amqp_new_connection();
-	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
-	amqp_set_sockfd(amqp.conn, cfg.amqp.fd);
-	amqp_login(amqp.conn, cfg.amqp.vhost, 0, 131072, 0,
-		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
-	amqp_channel_open(amqp.conn, 1);
-	amqp_get_rpc_reply(amqp.conn);
+	if (amqp_link(&amqp) < 0) {
+		printf("problem with amqp connection!\n");
+		return(-1);
+	}
 
 	amqp_exchange_declare(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
-				       amqp_cstring_bytes(cfg.amqp.exch_type),
-				       0,
-				       0,
+				       amqp_cstring_bytes(cfg.amqp.exch_type), 0, 0,
 				       amqp_empty_table);
+        r = amqp_get_rpc_reply(amqp.conn);
+        if (r.reply_type != AMQP_RESPONSE_NORMAL) {
+                printf("problem declaring amqp exchange\n");
+                return(-1);
+        }
 
 	syslog_workers = calloc(cfg.syslog.workers, sizeof(pthread_t));
 	gelf_workers = calloc(cfg.gelf.workers, sizeof(pthread_t));

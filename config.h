@@ -34,7 +34,7 @@
 #define HOST_NAME_MAX	255
 
 int	parse_config();
-void	parse_opts(int*, char***);
+int	parse_opts(int*, char***);
 
 extern  int     debug;
 extern  int     verbose;
