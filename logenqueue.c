@@ -62,7 +62,7 @@ struct  config  cfg;
 
 volatile static int msg_rcvd = 0;
 
-#define STATS_TIMEOUT 1
+#define STATS_TIMEOUT 10
 #define	ZLIBD	0
 #define	GZIPD	1
 #define	CHUNKD	2
@@ -115,6 +115,7 @@ message_stats(void *arg __unused)
 {
 	for (;;) {
 		VERBOSE("incoming msg rate  : %d msg/sec\n", msg_rcvd / STATS_TIMEOUT);
+		setproctitle("%d msg/sec", msg_rcvd / STATS_TIMEOUT);
 		msg_rcvd = 0;
 		sleep(STATS_TIMEOUT);
 	};
