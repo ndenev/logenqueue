@@ -424,8 +424,10 @@ main(int argc, char **argv)
 	}
 
 	pthread_create(&stats_thread, NULL, (void *)&message_stats, NULL);
+#if __FreeBSD__
 	snprintf(tname, sizeof(tname), "stats_thread[]");
 	pthread_set_name_np(stats_thread, tname);
+#endif
 
 	pthread_join(stats_thread, NULL);
 
