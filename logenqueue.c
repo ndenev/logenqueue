@@ -408,15 +408,19 @@ main(int argc, char **argv)
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		(syslog_workers_data+i)->id = i;
 		pthread_create(syslog_workers+i, NULL, (void *)&syslog_worker, syslog_workers_data+i);
+#if __FreeBSD__
 		snprintf(tname, sizeof(tname), "syslog_wrkr[%d]", i);
 		pthread_set_name_np(*(syslog_workers+i), tname);
+#endif
 	}
 
 	for (i = 0; i < cfg.gelf.workers; i++) {
 		(gelf_workers_data+i)->id = i;
 		pthread_create(gelf_workers+i, NULL, (void *)&gelf_worker, gelf_workers_data+i);
+#if __FreeBSD__
 		snprintf(tname, sizeof(tname), "gelf_wrkr[%d]", i);
 		pthread_set_name_np(*(gelf_workers+i), tname);
+#endif
 	}
 
 	pthread_create(&stats_thread, NULL, (void *)&message_stats, NULL);
