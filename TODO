@@ -1,2 +1,3 @@
 * proper checking of config file data, and provide default values
-* amqp calls return values checks
+* dns cache?
+
