@@ -175,8 +175,12 @@ json_escape(char *dst, char *src, int dst_len)
 char *
 parse_syslog_prio(char *msg, int *prio)
 {
-	if (sscanf(msg, "<%d>", prio) != 1)
+#define SL_PRI_MIN 0
+#define SL_PRI_MAX 191
+	if (sscanf(msg, "<%3d>", prio) != 1)
 		return(NULL);
+	if (*prio < SL_PRI_MIN || *prio > SL_PRI_MAX)
+		return(NULL); 
 	return (strchr(msg,'>')+1);
 }
 
