@@ -47,7 +47,9 @@
 #include <netdb.h>
 #include <math.h>
 #include <pthread.h>
+#if __FreeBSD__
 #include <pthread_np.h>
+#endif
 
 #include <zlib.h>
 #include <amqp.h>
