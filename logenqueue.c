@@ -135,6 +135,31 @@ sighandler_int(int sig)
 }
 
 void
+json_escape(char *dst, char *src, int dst_len)
+{
+	int dst_idx = 0;
+	int src_idx, r;
+
+	for (src_idx = 0; src_idx < strlen(src); src_idx++) {
+		/* escape control chars */
+		if (src[src_idx] < 0x1f) {
+			r = snprintf(dst+dst_idx,
+					dst_len - dst_idx,
+					"\\u%04x",
+					src[src_idx]);
+			dst_idx += r;
+		} else {
+			if (src[src_idx] == '\\' || src[src_idx] == '"')
+				dst[dst_idx++] = '\\';
+			dst[dst_idx++] = src[src_idx];
+		}
+	}
+	dst[dst_idx] = '\0';
+
+	return;
+}
+
+void
 syslog_worker(void *arg)
 {
 	struct worker_data *self = (struct worker_data *)arg;
@@ -147,7 +172,7 @@ syslog_worker(void *arg)
 	char	*msg, *msg2;
 	u_char	buf[SYSLOG_BUF];
 	u_char	esc_buf[SYSLOG_BUF*2];
-	int	r, i1, i2;
+	int	r;
 	int	q;
 	int	pri;
 	struct	tm tim;
@@ -185,22 +210,7 @@ syslog_worker(void *arg)
 			inet_ntop(from.sa_family, from.sa_data+2, host, sizeof(host));
 
 		/* escape back slashes and quotes in json */
-		i2 = 0;
-		for (i1 = 0; i1 < strlen((char *)buf); i1++) {
-			/* escape control chars */
-			if (buf[i1] < 0x1f) {
-				r = snprintf((char *)esc_buf+i2,
-						sizeof(esc_buf) - i2,
-						"\\u%04x",
-						buf[i1]);
-				i2 += r;
-			} else {
-				if (buf[i1] == '\\' || buf[i1] == '"')
-					esc_buf[i2++] = '\\';
-				esc_buf[i2++] = buf[i1];
-			}
-		}
-		esc_buf[i2] = '\0';
+		json_escape((char *)esc_buf, (char *)buf, strlen((char *)esc_buf));
 
 		if ( (esc_buf[0] != '<') || (!(msg = strchr((char *)esc_buf, '>'))) ) {
 			VERBOSE("invalid syslog format from (%s). msg: \"%s\"\n", host, esc_buf);
