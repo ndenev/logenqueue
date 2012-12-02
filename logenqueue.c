@@ -180,14 +180,14 @@ parse_syslog_prio(char *msg, int *prio)
 	if (sscanf(msg, "<%3d>", prio) != 1)
 		return(NULL);
 	if (*prio < SL_PRI_MIN || *prio > SL_PRI_MAX)
-		return(NULL); 
+		return(NULL);
 	return (strchr(msg,'>')+1);
 }
 
 void
 syslog_worker(void *arg)
 {
-	struct worker_data *self = (struct worker_data *)arg;
+	struct thr_dat *self = (struct thr_dat *)arg;
 
 	struct	amqp_state_t amqp;
 	struct	hostent *hp;
@@ -211,7 +211,7 @@ syslog_worker(void *arg)
 	//DEBUG("syslog worker thread #%d started\n", self->id);
 
 	if (amqp_link(&amqp) < 0) {
-		printf("problem with amqp connection in syslog worker #%d\n", self->id);
+		printf("can't connect to amqp from syslog thr #%d\n", self->id);
 		return;
 	}
 
@@ -229,16 +229,19 @@ syslog_worker(void *arg)
 		msg_rcvd++;
 
 		hp = NULL;
-		if ((hp = gethostbyaddr((const void *)&from.sa_data+2, sizeof(struct in_addr), AF_INET)))
+		if ((hp = gethostbyaddr((const void *)&from.sa_data+2,
+					 sizeof(struct in_addr), AF_INET))) {
 			strncpy(host, hp->h_name, sizeof(host));
-		else
-			inet_ntop(from.sa_family, from.sa_data+2, host, sizeof(host));
+		} else {
+			inet_ntop(from.sa_family, from.sa_data+2,
+				  host, sizeof(host));
+		}
 
 		json_escape((char *)esc_buf, (char *)buf, sizeof(esc_buf));
 
 		msg = parse_syslog_prio((char *)esc_buf, &pri);
 		if (!msg) {
-			VERBOSE("invalid syslog format from (%s). msg: \"%s\"\n", host, esc_buf);
+			VERBOSE("invalid syslog [%s]->\"%s\"\n", host, esc_buf);
 			continue;
 		}
 
@@ -298,7 +301,7 @@ syslog_worker(void *arg)
 void
 gelf_worker(void *arg)
 {
-	struct worker_data *self = (struct worker_data *)arg;
+	struct thr_dat *self = (struct thr_dat *)arg;
 
 	struct  amqp_state_t amqp;
 	amqp_bytes_t msgb;
@@ -309,7 +312,7 @@ gelf_worker(void *arg)
 	//DEBUG("gelf worker thread #%d started\n", self->id);
 
 	if (amqp_link(&amqp) < 0) {
-		printf("problem with amqp connection in gelf worker #%d\n", self->id);
+		printf("can't connect to amqp from gelf thr #%d\n", self->id);
 		return;
 	}
 
@@ -323,7 +326,7 @@ gelf_worker(void *arg)
 			printf("zero data read\n");
 		}
 		msg_rcvd++;
-#define	GELF_MAGIC(type)	bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
+#define	GELF_MAGIC(type) bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
 		if (!GELF_MAGIC(ZLIBD)) {
 			//DEBUG("Received ZLIB'd GELF message.\n");
@@ -400,7 +403,7 @@ main(int argc, char **argv)
 	int	i;
 	struct	amqp_state_t amqp;
 	pthread_t stats_thread, *syslog_workers, *gelf_workers;
-	struct	worker_data *syslog_workers_data, *gelf_workers_data;
+	struct	thr_dat *syslog_workers_data, *gelf_workers_data;
 	char	tname[17];
 	amqp_rpc_reply_t r;
 
@@ -456,12 +459,13 @@ main(int argc, char **argv)
 	syslog_workers = calloc(cfg.syslog.workers, sizeof(pthread_t));
 	gelf_workers = calloc(cfg.gelf.workers, sizeof(pthread_t));
 
-	syslog_workers_data = calloc(cfg.syslog.workers, sizeof(struct worker_data));
-	gelf_workers_data = calloc(cfg.gelf.workers, sizeof(struct worker_data));
+	syslog_workers_data = calloc(cfg.syslog.workers, sizeof(struct thr_dat));
+	gelf_workers_data = calloc(cfg.gelf.workers, sizeof(struct thr_dat));
 
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		(syslog_workers_data+i)->id = i;
-		pthread_create(syslog_workers+i, NULL, (void *)&syslog_worker, syslog_workers_data+i);
+		pthread_create(syslog_workers+i, NULL,
+				(void *)&syslog_worker, syslog_workers_data+i);
 		snprintf(tname, sizeof(tname), "syslog_wrkr[%d]", i);
 #if __FreeBSD__
 		pthread_set_name_np(*(syslog_workers+i), tname);
@@ -470,7 +474,8 @@ main(int argc, char **argv)
 
 	for (i = 0; i < cfg.gelf.workers; i++) {
 		(gelf_workers_data+i)->id = i;
-		pthread_create(gelf_workers+i, NULL, (void *)&gelf_worker, gelf_workers_data+i);
+		pthread_create(gelf_workers+i, NULL,
+				(void *)&gelf_worker, gelf_workers_data+i);
 		snprintf(tname, sizeof(tname), "gelf_wrkr[%d]", i);
 #if __FreeBSD__
 		pthread_set_name_np(*(gelf_workers+i), tname);

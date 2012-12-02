@@ -35,7 +35,7 @@
 int     debug = 0;
 int     verbose = 0;
 
-struct worker_data {
+struct thr_dat {
 	int     id;
 };
 
