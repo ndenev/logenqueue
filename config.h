@@ -39,14 +39,22 @@ int	parse_opts(int*, char***);
 extern  int     debug;
 extern  int     verbose;
 
+/* DEFAULTS */
+#define AMQP_HOST	"localhost"
+#define AMQP_PORT	5672
+#define	AMQP_USER	"guest"
+#define AMQP_PASS	"guest"
+#define AMQP_VHOST	"/"
+#define AMQP_EXNAME
+
 struct amqp_config {
 	char	host[HOST_NAME_MAX];
 	u_int	port;
 	char	user[255];
 	char	pass[255];
 	char	vhost[255];
-	char	exch_name[255];
-	char	exch_type[64];
+	char	ex_name[255];
+	char	ex_type[64];
 	int	fd;
 };
 

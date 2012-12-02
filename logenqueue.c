@@ -250,9 +250,10 @@ syslog_worker(void *arg)
 		msgb.len = (SYSLOG_BUF*3) - strm.avail_out;
 		msgb.bytes = out;
 
-		q = amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
-				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
-				    &amqp.props, msgb);
+		q = amqp_basic_publish(amqp.conn, 1,
+					amqp_cstring_bytes(cfg.amqp.ex_name),
+					amqp_cstring_bytes(cfg.amqp.host), 0, 0,
+					&amqp.props, msgb);
 		if (q < 0)
 			printf("failure publishing message to amqp\n");
 
@@ -304,9 +305,10 @@ gelf_worker(void *arg)
 		msgb.len = r;
 		msgb.bytes = buf;
 
-		q = amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
-				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
-				    &amqp.props, msgb);
+		q = amqp_basic_publish(amqp.conn, 1,
+					amqp_cstring_bytes(cfg.amqp.ex_name),
+					amqp_cstring_bytes(cfg.amqp.host), 0, 0,
+					&amqp.props, msgb);
 		if (q < 0)
 			printf("failure publishing message to amqp\n");
 
@@ -378,7 +380,7 @@ main(int argc, char **argv)
 	}
 
 	parse_config();
-	
+
 	if (!debug) {
 		pid = fork();
 		if (pid < 0) {
@@ -391,7 +393,7 @@ main(int argc, char **argv)
 		}
 		setsid();
 	}
-	
+
 	DEBUG("syslog listen : %s:%d\n", cfg.syslog.bind, cfg.syslog.port);
 	DEBUG("gelf listen : %s:%d\n", cfg.gelf.bind, cfg.gelf.port);
 
@@ -407,9 +409,10 @@ main(int argc, char **argv)
 		return(-1);
 	}
 
-	amqp_exchange_declare(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
-				       amqp_cstring_bytes(cfg.amqp.exch_type), 0, 0,
-				       amqp_empty_table);
+	amqp_exchange_declare(amqp.conn, 1,
+				amqp_cstring_bytes(cfg.amqp.ex_name),
+				amqp_cstring_bytes(cfg.amqp.ex_type),
+				0, 0, amqp_empty_table);
         r = amqp_get_rpc_reply(amqp.conn);
         if (r.reply_type != AMQP_RESPONSE_NORMAL) {
                 printf("problem declaring amqp exchange\n");
@@ -425,8 +428,8 @@ main(int argc, char **argv)
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		(syslog_workers_data+i)->id = i;
 		pthread_create(syslog_workers+i, NULL, (void *)&syslog_worker, syslog_workers_data+i);
-#if __FreeBSD__
 		snprintf(tname, sizeof(tname), "syslog_wrkr[%d]", i);
+#if __FreeBSD__
 		pthread_set_name_np(*(syslog_workers+i), tname);
 #endif
 	}
@@ -434,15 +437,15 @@ main(int argc, char **argv)
 	for (i = 0; i < cfg.gelf.workers; i++) {
 		(gelf_workers_data+i)->id = i;
 		pthread_create(gelf_workers+i, NULL, (void *)&gelf_worker, gelf_workers_data+i);
-#if __FreeBSD__
 		snprintf(tname, sizeof(tname), "gelf_wrkr[%d]", i);
+#if __FreeBSD__
 		pthread_set_name_np(*(gelf_workers+i), tname);
 #endif
 	}
 
 	pthread_create(&stats_thread, NULL, (void *)&message_stats, NULL);
-#if __FreeBSD__
 	snprintf(tname, sizeof(tname), "stats_thread[]");
+#if __FreeBSD__
 	pthread_set_name_np(stats_thread, tname);
 #endif
 

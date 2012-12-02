@@ -77,9 +77,9 @@ int parse_config()
 		} else if (strcasecmp(key, "amqp_vhost") == 0) {
 			CFGCPY(cfg.amqp.vhost);
 		} else if (strcasecmp(key, "amqp_exchange_name") == 0) {
-			CFGCPY(cfg.amqp.exch_name);
+			CFGCPY(cfg.amqp.ex_name);
 		} else if (strcasecmp(key, "amqp_exchange_type") == 0) {
-			CFGCPY(cfg.amqp.exch_type);
+			CFGCPY(cfg.amqp.ex_type);
 		} else if (strcasecmp(key, "syslog_listen") == 0) {
 			CFGCPY(cfg.syslog.bind);
 		} else if (strcasecmp(key, "syslog_port") == 0) {
