@@ -121,6 +121,13 @@ message_stats(void *arg __unused)
 }
 
 void
+reload(int sig)
+{
+	printf("Here goes code to reload the config\n");
+	return;
+}
+
+void
 sighandler_int(int sig)
 {
 	exit(0);
@@ -361,7 +368,9 @@ main(int argc, char **argv)
 	char	tname[17];
 	amqp_rpc_reply_t r;
 
+	signal(SIGHUP, reload);
 	signal(SIGINT, sighandler_int);
+	signal(SIGTERM, sighandler_int);
 
 	if (parse_opts(&argc, &argv) < 0) {
 		printf("problem parsing command line arguments/options\n");
@@ -438,6 +447,12 @@ main(int argc, char **argv)
 #endif
 
 	pthread_join(stats_thread, NULL);
+
+	/* STFU Clang */
+	free(syslog_workers);
+	free(gelf_workers);
+	free(syslog_workers_data);
+	free(gelf_workers_data);
 
 	return 0;
 }
