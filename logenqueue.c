@@ -309,14 +309,14 @@ gelf_worker(void *arg)
 int
 udp_listen(char *bindaddr, u_int port)
 {
-	int udpsock_fd, noptval, ret;
+	int udpsock_fd, noptval, r;
 	struct sockaddr_in staddr;
 
 	udpsock_fd = socket(AF_INET, SOCK_DGRAM, 0);
 
 	if (udpsock_fd == -1) {
 		printf("error creating socket!: %s\n", strerror(errno));
-		exit(-1);
+		return(-1);
 	}
 
 	memset(&staddr, 0, sizeof(struct sockaddr_in));
@@ -325,22 +325,26 @@ udp_listen(char *bindaddr, u_int port)
 	staddr.sin_family = AF_INET;
 
 	noptval = 1024 * 1024;
-	ret = setsockopt(udpsock_fd, SOL_SOCKET, SO_RCVBUF,
+	r = setsockopt(udpsock_fd, SOL_SOCKET, SO_RCVBUF,
 		(const void *)&noptval, sizeof(noptval));
-
-	noptval = 1;
-	ret = setsockopt(udpsock_fd, SOL_SOCKET, SO_REUSEADDR,
-		(const void *)&noptval, sizeof(noptval));
-	if (ret == -1) {
+	if (r == -1) {
 		printf("error calling setsockopt: %s\n", strerror(errno));
-		exit(-1);
+		return(-1);
 	}
 
-	ret = bind(udpsock_fd, (struct sockaddr *)&staddr, sizeof(staddr));
-	if (ret != 0) {
+	noptval = 1;
+	r = setsockopt(udpsock_fd, SOL_SOCKET, SO_REUSEADDR,
+		(const void *)&noptval, sizeof(noptval));
+	if (r == -1) {
+		printf("error calling setsockopt: %s\n", strerror(errno));
+		return(-1);
+	}
+
+	r = bind(udpsock_fd, (struct sockaddr *)&staddr, sizeof(staddr));
+	if (r != 0) {
 		printf("bind: %s\n", bindaddr);
 		printf("error binding to socket: %s\n", strerror(errno));
-		exit(-1);
+		return(-1);
 	}
 
 	return(udpsock_fd);
@@ -384,6 +388,10 @@ main(int argc, char **argv)
 
 	cfg.syslog.fd = udp_listen(cfg.syslog.bind, cfg.syslog.port);
 	cfg.gelf.fd = udp_listen(cfg.gelf.bind, cfg.gelf.port);
+	if (cfg.syslog.fd == -1 || cfg.gelf.fd == -1) {
+		printf("problem listening\n");
+		return(-1);
+	}
 
 	if (amqp_link(&amqp) < 0) {
 		printf("problem with amqp connection!\n");
