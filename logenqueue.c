@@ -67,8 +67,8 @@ volatile static int msg_rcvd = 0;
 #define	GZIPD	1
 #define	CHUNKD	2
 
-#define SYSLOG_BUF 1024
-#define GELF_BUF 65536
+#define SYSLOG_BUF 65535
+#define GELF_BUF 65535
 
 static const char *
 fac2str(int facility)
@@ -134,7 +134,12 @@ sighandler_int(int sig)
 	exit(0);
 }
 
-void
+/*
+ * json_escape copies one string to another
+ * escaping chars that must be escaped in json (no shit?)
+ * these are backslashes, quotes, and special chars.
+ */
+int
 json_escape(char *dst, char *src, int dst_len)
 {
 	int dst_idx = 0;
@@ -155,8 +160,24 @@ json_escape(char *dst, char *src, int dst_len)
 		}
 	}
 	dst[dst_idx] = '\0';
+	return(strlen(dst));
+}
 
-	return;
+/*
+ * parse_syslog_prio() tries to parse syslog
+ * message priority from a message string.
+ * if successfull it will return pointer
+ * to the first char after the syslog priority field,
+ * and write the priority to the
+ * int pointed by the prio argument.
+ * On invalid syslog message it will return NULL.
+ */
+char *
+parse_syslog_prio(char *msg, int *prio)
+{
+	if (sscanf(msg, "<%d>", prio) != 1)
+		return(NULL);
+	return (strchr(msg,'>')+1);
 }
 
 void
@@ -209,15 +230,13 @@ syslog_worker(void *arg)
 		else
 			inet_ntop(from.sa_family, from.sa_data+2, host, sizeof(host));
 
-		/* escape back slashes and quotes in json */
-		json_escape((char *)esc_buf, (char *)buf, strlen((char *)esc_buf));
+		json_escape((char *)esc_buf, (char *)buf, sizeof(esc_buf));
 
-		if ( (esc_buf[0] != '<') || (!(msg = strchr((char *)esc_buf, '>'))) ) {
+		msg = parse_syslog_prio((char *)esc_buf, &pri);
+		if (!msg) {
 			VERBOSE("invalid syslog format from (%s). msg: \"%s\"\n", host, esc_buf);
-			continue;	
+			continue;
 		}
-		msg++;
-		pri = (int)strtol((char *)esc_buf+1,(char **)NULL,10);
 
 		int severity = pri & 0x07;
 		int facility = pri >> 3;
