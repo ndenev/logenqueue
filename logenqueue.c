@@ -138,6 +138,7 @@ syslog_worker(void *arg)
 	u_char	buf[SYSLOG_BUF];
 	u_char	esc_buf[SYSLOG_BUF*2];
 	int	r, i1, i2;
+	int	q;
 	int	pri;
 	struct	tm tim;
 	time_t	ts;
@@ -240,9 +241,11 @@ syslog_worker(void *arg)
 		msgb.len = (SYSLOG_BUF*3) - strm.avail_out;
 		msgb.bytes = out;
 
-		amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+		q = amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 				    &amqp.props, msgb);
+		if (q < 0)
+			printf("failure publishing message to amqp\n");
 
 	}
 
@@ -257,6 +260,7 @@ gelf_worker(void *arg)
 	amqp_bytes_t msgb;
 	u_char	buf[GELF_BUF];
 	int	r;
+	int	q;
 
 	//DEBUG("gelf worker thread #%d started\n", self->id);
 
@@ -291,9 +295,11 @@ gelf_worker(void *arg)
 		msgb.len = r;
 		msgb.bytes = buf;
 
-		amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
+		q = amqp_basic_publish(amqp.conn, 1, amqp_cstring_bytes(cfg.amqp.exch_name),
 				    amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 				    &amqp.props, msgb);
+		if (q < 0)
+			printf("failure publishing message to amqp\n");
 
 	}
 }
@@ -346,7 +352,7 @@ main(int argc, char **argv)
 	struct	amqp_state_t amqp;
 	pthread_t stats_thread, *syslog_workers, *gelf_workers;
 	struct	worker_data *syslog_workers_data, *gelf_workers_data;
-	char	tname[32];
+	char	tname[17];
 	amqp_rpc_reply_t r;
 
 	signal(SIGINT, sighandler_int);
@@ -400,19 +406,19 @@ main(int argc, char **argv)
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		(syslog_workers_data+i)->id = i;
 		pthread_create(syslog_workers+i, NULL, (void *)&syslog_worker, syslog_workers_data+i);
-		snprintf(tname, sizeof(tname), "syslog_worker[%d]", i);
+		snprintf(tname, sizeof(tname), "syslog_wrkr[%d]", i);
 		pthread_set_name_np(*(syslog_workers+i), tname);
 	}
 
 	for (i = 0; i < cfg.gelf.workers; i++) {
 		(gelf_workers_data+i)->id = i;
 		pthread_create(gelf_workers+i, NULL, (void *)&gelf_worker, gelf_workers_data+i);
-		snprintf(tname, sizeof(tname), "gelf_worker[%d]", i);
+		snprintf(tname, sizeof(tname), "gelf_wrkr[%d]", i);
 		pthread_set_name_np(*(gelf_workers+i), tname);
 	}
 
 	pthread_create(&stats_thread, NULL, (void *)&message_stats, NULL);
-	snprintf(tname, sizeof(tname), "stats_thread");
+	snprintf(tname, sizeof(tname), "stats_thread[]");
 	pthread_set_name_np(stats_thread, tname);
 
 	pthread_join(stats_thread, NULL);
