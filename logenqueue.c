@@ -208,15 +208,33 @@ parse_syslog_prio(char *msg, int *prio)
 	return (strchr(msg,'>')+1);
 }
 
+/*
+ * This function tries do to reverse DNS
+ * on the given host and return the hostname,
+ * or if it fails returns the IP.
+ * XXX TODO: Implement caching.
+ */
+void
+trytogetrdns(struct sockaddr *from, char *host, int max_host_len)
+{
+	struct	hostent *hp = NULL;
+	void	*src = from->sa_data+2;
+
+	if ((hp = gethostbyaddr((const void *)src, sizeof(struct in_addr), AF_INET))) {
+		strncpy(host, hp->h_name, max_host_len);
+	} else {
+		inet_ntop(from->sa_family, src, host, max_host_len);
+	}
+}
+
 void
 syslog_worker(void *arg)
 {
-	struct syslog_thr_dat *self = (struct syslog_thr_dat *)arg;
+	struct	syslog_thr_dat *self = (struct syslog_thr_dat *)arg;
 
 	struct	amqp_state_t amqp;
-	struct	hostent *hp;
 	struct  sockaddr from;
-	u_int ip_len;
+	u_int	ip_len;
 	char 	host[_POSIX_HOST_NAME_MAX];
 	char	*msg, *msg2;
 	u_char	buf[SYSLOG_BUF];
@@ -254,14 +272,7 @@ syslog_worker(void *arg)
 		buf[r] = '\0';
 		self->msg_count++;
 
-		hp = NULL;
-		if ((hp = gethostbyaddr((const void *)&from.sa_data+2,
-					 sizeof(struct in_addr), AF_INET))) {
-			strncpy(host, hp->h_name, sizeof(host));
-		} else {
-			inet_ntop(from.sa_family, from.sa_data+2,
-				  host, sizeof(host));
-		}
+		trytogetrdns(&from, host, sizeof(host));
 
 		json_escape((char *)esc_buf, (char *)buf, sizeof(esc_buf));
 
