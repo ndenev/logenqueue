@@ -112,7 +112,7 @@ void
 message_stats(void *arg)
 {
 	struct thr_dat *workers_data = (struct thr_dat *)arg;
-	struct syslog_thr_dat *syslog_thr_ptr;
+	struct syslog_thr_dat *sysl_thr_ptr;
 	struct gelf_thr_dat *gelf_thr_ptr;
 	u_int	message_count;
 	int i;
@@ -121,14 +121,22 @@ message_stats(void *arg)
 		sleep(STATS_TIMEOUT);
 		message_count = 0;
 		for (i = 0; i < cfg.syslog.workers; i++) {
-			syslog_thr_ptr = workers_data->syslog+i;
-			message_count += syslog_thr_ptr->msg_count - syslog_thr_ptr->old_msg_count;
-			syslog_thr_ptr->old_msg_count = syslog_thr_ptr->msg_count;
+			sysl_thr_ptr = workers_data->syslog+i;
+			if (sysl_thr_ptr->msg_count >= sysl_thr_ptr->old_msg_count) {
+				message_count += sysl_thr_ptr->msg_count - sysl_thr_ptr->old_msg_count;
+				sysl_thr_ptr->old_msg_count = sysl_thr_ptr->msg_count;
+			} else {
+				message_count += (UINT_MAX - sysl_thr_ptr->old_msg_count) + sysl_thr_ptr->msg_count;
+			}
 		}
 		for (i = 0; i < cfg.gelf.workers; i++) {
 			gelf_thr_ptr = workers_data->gelf+i;
-			message_count += gelf_thr_ptr->msg_count - gelf_thr_ptr->old_msg_count;
-			gelf_thr_ptr->old_msg_count = gelf_thr_ptr->msg_count;
+			if (gelf_thr_ptr->msg_count >= gelf_thr_ptr->old_msg_count) {
+				message_count += gelf_thr_ptr->msg_count - gelf_thr_ptr->old_msg_count;
+				gelf_thr_ptr->old_msg_count = gelf_thr_ptr->msg_count;
+			} else {
+				message_count += (UINT_MAX - gelf_thr_ptr->old_msg_count) + gelf_thr_ptr->msg_count;
+			}
 		}
 		VERBOSE("incoming msg rate  : %d msg/sec\n", message_count);
 #if __FreeBSD__ || __linux__
