@@ -115,7 +115,9 @@ message_stats(void *arg __unused)
 {
 	for (;;) {
 		VERBOSE("incoming msg rate  : %d msg/sec\n", msg_rcvd / STATS_TIMEOUT);
+#if __FreeBSD__ || __linux__
 		setproctitle("%d msg/sec", msg_rcvd / STATS_TIMEOUT);
+#endif
 		msg_rcvd = 0;
 		sleep(STATS_TIMEOUT);
 	};
