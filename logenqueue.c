@@ -141,7 +141,7 @@ message_stats(void *arg)
 		message_count = message_count / STATS_TIMEOUT;
 		VERBOSE("incoming msg rate  : %d msg/sec\n", message_count);
 #if __FreeBSD__ || __linux__
-		//setproctitle("%d msg/sec", message_count);
+		setproctitle("%d msg/sec", message_count);
 #endif
 	};
 }
