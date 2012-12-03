@@ -60,8 +60,6 @@
 
 struct  config  cfg;
 
-volatile static int msg_rcvd = 0;
-
 #define STATS_TIMEOUT 10
 #define	ZLIBD	0
 #define	GZIPD	1
@@ -111,15 +109,31 @@ amqp_link(struct amqp_state_t *amqp)
 }
 
 void
-message_stats(void *arg __unused)
+message_stats(void *arg)
 {
+	struct thr_dat *workers_data = (struct thr_dat *)arg;
+	struct syslog_thr_dat *syslog_thr_ptr;
+	struct gelf_thr_dat *gelf_thr_ptr;
+	u_int	message_count;
+	int i;
+
 	for (;;) {
-		VERBOSE("incoming msg rate  : %d msg/sec\n", msg_rcvd / STATS_TIMEOUT);
-#if __FreeBSD__ || __linux__
-		setproctitle("%d msg/sec", msg_rcvd / STATS_TIMEOUT);
-#endif
-		msg_rcvd = 0;
 		sleep(STATS_TIMEOUT);
+		message_count = 0;
+		for (i = 0; i < cfg.syslog.workers; i++) {
+			syslog_thr_ptr = workers_data->syslog+i;
+			message_count += syslog_thr_ptr->msg_count - syslog_thr_ptr->old_msg_count;
+			syslog_thr_ptr->old_msg_count = syslog_thr_ptr->msg_count;
+		}
+		for (i = 0; i < cfg.gelf.workers; i++) {
+			gelf_thr_ptr = workers_data->gelf+i;
+			message_count += gelf_thr_ptr->msg_count - gelf_thr_ptr->old_msg_count;
+			gelf_thr_ptr->old_msg_count = gelf_thr_ptr->msg_count;
+		}
+		VERBOSE("incoming msg rate  : %d msg/sec\n", message_count);
+#if __FreeBSD__ || __linux__
+		setproctitle("%d msg/sec", message_count);
+#endif
 	};
 }
 
@@ -189,7 +203,7 @@ parse_syslog_prio(char *msg, int *prio)
 void
 syslog_worker(void *arg)
 {
-	struct thr_dat *self = (struct thr_dat *)arg;
+	struct syslog_thr_dat *self = (struct syslog_thr_dat *)arg;
 
 	struct	amqp_state_t amqp;
 	struct	hostent *hp;
@@ -217,6 +231,8 @@ syslog_worker(void *arg)
 		return;
 	}
 
+	self->msg_count = 0;
+	self->old_msg_count = 0;
 	for (;;) {
 		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
 		if (r < 0) {
@@ -228,7 +244,7 @@ syslog_worker(void *arg)
 			continue;
 		}
 		buf[r] = '\0';
-		msg_rcvd++;
+		self->msg_count++;
 
 		hp = NULL;
 		if ((hp = gethostbyaddr((const void *)&from.sa_data+2,
@@ -303,7 +319,7 @@ syslog_worker(void *arg)
 void
 gelf_worker(void *arg)
 {
-	struct thr_dat *self = (struct thr_dat *)arg;
+	struct gelf_thr_dat *self = (struct gelf_thr_dat *)arg;
 
 	struct  amqp_state_t amqp;
 	amqp_bytes_t msgb;
@@ -318,6 +334,8 @@ gelf_worker(void *arg)
 		return;
 	}
 
+	self->msg_count = 0;
+	self->old_msg_count = 0;
 	for (;;) {
 		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
 		if (r < 0) {
@@ -327,7 +345,7 @@ gelf_worker(void *arg)
 		if (r == 0) {
 			printf("zero data read\n");
 		}
-		msg_rcvd++;
+		self->msg_count++;
 #define	GELF_MAGIC(type) bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
 		if (!GELF_MAGIC(ZLIBD)) {
@@ -404,8 +422,13 @@ main(int argc, char **argv)
 	int	pid;
 	int	i;
 	struct	amqp_state_t amqp;
-	pthread_t stats_thread, *syslog_workers, *gelf_workers;
-	struct	thr_dat *syslog_workers_data, *gelf_workers_data;
+	pthread_t	 stats_thread;
+	pthread_t	*syslog_workers;
+	pthread_t	*gelf_workers;
+	struct	thr_dat	 	 workers_data;
+	struct	syslog_thr_dat	*syslog_thr_ptr;
+	struct	gelf_thr_dat	*gelf_thr_ptr;
+
 	char	tname[17];
 	amqp_rpc_reply_t r;
 
@@ -461,13 +484,14 @@ main(int argc, char **argv)
 	syslog_workers = calloc(cfg.syslog.workers, sizeof(pthread_t));
 	gelf_workers = calloc(cfg.gelf.workers, sizeof(pthread_t));
 
-	syslog_workers_data = calloc(cfg.syslog.workers, sizeof(struct thr_dat));
-	gelf_workers_data = calloc(cfg.gelf.workers, sizeof(struct thr_dat));
+	workers_data.syslog = calloc(cfg.syslog.workers, sizeof(struct syslog_thr_dat));
+	workers_data.gelf  = calloc(cfg.gelf.workers, sizeof(struct gelf_thr_dat));
 
 	for (i = 0; i < cfg.syslog.workers; i++) {
-		(syslog_workers_data+i)->id = i;
+		syslog_thr_ptr = workers_data.syslog+i;
+		syslog_thr_ptr->id = i;
 		pthread_create(syslog_workers+i, NULL,
-				(void *)&syslog_worker, syslog_workers_data+i);
+				(void *)&syslog_worker, syslog_thr_ptr);
 		snprintf(tname, sizeof(tname), "syslog_wrkr[%d]", i);
 #if __FreeBSD__
 		pthread_set_name_np(*(syslog_workers+i), tname);
@@ -475,16 +499,17 @@ main(int argc, char **argv)
 	}
 
 	for (i = 0; i < cfg.gelf.workers; i++) {
-		(gelf_workers_data+i)->id = i;
+		gelf_thr_ptr = workers_data.gelf+i;
+		gelf_thr_ptr->id = i;
 		pthread_create(gelf_workers+i, NULL,
-				(void *)&gelf_worker, gelf_workers_data+i);
+				(void *)&gelf_worker, gelf_thr_ptr);
 		snprintf(tname, sizeof(tname), "gelf_wrkr[%d]", i);
 #if __FreeBSD__
 		pthread_set_name_np(*(gelf_workers+i), tname);
 #endif
 	}
 
-	pthread_create(&stats_thread, NULL, (void *)&message_stats, NULL);
+	pthread_create(&stats_thread, NULL, (void *)&message_stats, &workers_data);
 	snprintf(tname, sizeof(tname), "stats_thread[]");
 #if __FreeBSD__
 	pthread_set_name_np(stats_thread, tname);
@@ -495,8 +520,8 @@ main(int argc, char **argv)
 	/* STFU Clang */
 	free(syslog_workers);
 	free(gelf_workers);
-	free(syslog_workers_data);
-	free(gelf_workers_data);
+	free(workers_data.syslog);
+	free(workers_data.gelf);
 
 	return 0;
 }

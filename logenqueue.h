@@ -35,8 +35,21 @@
 int     debug = 0;
 int     verbose = 0;
 
-struct thr_dat {
+struct syslog_thr_dat {
 	int     id;
+	u_int	msg_count;
+	u_int	old_msg_count;
+};
+
+struct gelf_thr_dat {
+	int     id;
+	u_int	msg_count;
+	u_int	old_msg_count;
+};
+
+struct thr_dat {
+	struct syslog_thr_dat *syslog;
+	struct gelf_thr_dat *gelf;
 };
 
 static const char gelf_magic[3][2] = {
