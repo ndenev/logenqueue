@@ -60,7 +60,7 @@
 
 struct  config  cfg;
 
-#define STATS_TIMEOUT 10
+#define STATS_TIMEOUT 5
 #define	ZLIBD	0
 #define	GZIPD	1
 #define	CHUNKD	2
@@ -138,9 +138,10 @@ message_stats(void *arg)
 				message_count += (UINT_MAX - gelf_thr_ptr->old_msg_count) + gelf_thr_ptr->msg_count;
 			}
 		}
+		message_count = message_count / STATS_TIMEOUT;
 		VERBOSE("incoming msg rate  : %d msg/sec\n", message_count);
 #if __FreeBSD__ || __linux__
-		setproctitle("%d msg/sec", message_count);
+		//setproctitle("%d msg/sec", message_count);
 #endif
 	};
 }
@@ -208,23 +209,56 @@ parse_syslog_prio(char *msg, int *prio)
 	return (strchr(msg,'>')+1);
 }
 
+
 /*
  * This function tries do to reverse DNS
  * on the given host and return the hostname,
  * or if it fails returns the IP.
  * XXX TODO: Implement caching.
  */
+//pthread_rwlock_t dnscache_lock;
+struct dnscache {
+	struct	sockaddr from;
+	char	host[_POSIX_HOST_NAME_MAX];
+	int	ts;
+};
+#define	DNSCACHESIZE 2048
+
 void
-trytogetrdns(struct sockaddr *from, char *host, int max_host_len)
+trytogetrdns(struct sockaddr *from, char *host, struct dnscache *cache)
 {
 	struct	hostent *hp = NULL;
 	void	*src = from->sa_data+2;
 
-	if ((hp = gethostbyaddr((const void *)src, sizeof(struct in_addr), AF_INET))) {
-		strncpy(host, hp->h_name, max_host_len);
-	} else {
-		inet_ntop(from->sa_family, src, host, max_host_len);
+	int i;
+	int oldest;
+
+	//pthread_rwlock_rdlock(&dnscache_lock);
+	oldest = time(NULL);
+	for (i = 0; i < DNSCACHESIZE; i++) {
+		if (!memcmp(&cache[i].from, from, sizeof(struct sockaddr))) {
+			//DEBUG("+");
+			strncpy(host, cache[i].host, _POSIX_HOST_NAME_MAX);
+			cache[i].ts = time(NULL);
+			//pthread_rwlock_unlock(&dnscache_lock);
+			return;
+		}
 	}
+	//DEBUG("-");
+	for (i = 0; i < DNSCACHESIZE; i++)
+		if (cache[i].ts < oldest)
+			oldest = cache[i].ts;
+
+	if ((hp = gethostbyaddr((const void *)src, sizeof(struct in_addr), AF_INET)))
+		strncpy(host, hp->h_name, _POSIX_HOST_NAME_MAX);
+	else
+		inet_ntop(from->sa_family, src, host, _POSIX_HOST_NAME_MAX);
+	//pthread_rwlock_unlock(&dnscache_lock);
+	//pthread_rwlock_wrlock(&dnscache_lock);	
+	memcpy(&cache[oldest].from, from, sizeof(struct sockaddr)); 
+	strncpy(cache[oldest].host, host, _POSIX_HOST_NAME_MAX);
+	cache[oldest].ts = time(NULL);
+	//pthread_rwlock_unlock(&dnscache_lock);	
 }
 
 void
@@ -236,6 +270,7 @@ syslog_worker(void *arg)
 	struct  sockaddr from;
 	u_int	ip_len;
 	char 	host[_POSIX_HOST_NAME_MAX];
+	struct	dnscache cache[DNSCACHESIZE];
 	char	*msg, *msg2;
 	u_char	buf[SYSLOG_BUF];
 	u_char	esc_buf[SYSLOG_BUF*2];
@@ -272,7 +307,7 @@ syslog_worker(void *arg)
 		buf[r] = '\0';
 		self->msg_count++;
 
-		trytogetrdns(&from, host, sizeof(host));
+		trytogetrdns(&from, host, cache);
 
 		json_escape((char *)esc_buf, (char *)buf, sizeof(esc_buf));
 
@@ -505,6 +540,9 @@ main(int argc, char **argv)
 
 	workers_data.syslog = calloc(cfg.syslog.workers, sizeof(struct syslog_thr_dat));
 	workers_data.gelf  = calloc(cfg.gelf.workers, sizeof(struct gelf_thr_dat));
+
+	//memset(&cache, 0, sizeof(struct dnscache) * DNSCACHESIZE);
+	//pthread_rwlock_init(&dnscache_lock, NULL);
 
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		syslog_thr_ptr = workers_data.syslog+i;
