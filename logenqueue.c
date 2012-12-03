@@ -216,7 +216,7 @@ syslog_worker(void *arg)
 	}
 
 	for (;;) {
-		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), 0, &from, &ip_len);
+		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
 		if (r < 0) {
 			printf("recvfrom problem\n");
 			continue;
