@@ -29,7 +29,6 @@
 #include <ctype.h>
 #include <err.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdio.h>
@@ -42,7 +41,6 @@
 #include <time.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <termios.h>
 #include <unistd.h>
 #include <netdb.h>
 #include <math.h>
@@ -219,7 +217,7 @@ parse_syslog_prio(char *msg, int *prio)
 //pthread_rwlock_t dnscache_lock;
 struct dnscache {
 	struct	sockaddr from;
-	char	host[_POSIX_HOST_NAME_MAX];
+	char	host[_POSIX_HOST_NAME_MAX+1];
 	int	ts;
 };
 #define	DNSCACHESIZE 2048
@@ -269,7 +267,7 @@ syslog_worker(void *arg)
 	struct	amqp_state_t amqp;
 	struct  sockaddr from;
 	u_int	ip_len;
-	char 	host[_POSIX_HOST_NAME_MAX];
+	char 	host[_POSIX_HOST_NAME_MAX+1];
 	struct	dnscache cache[DNSCACHESIZE];
 	char	*msg, *msg2;
 	u_char	buf[SYSLOG_BUF];
@@ -479,9 +477,9 @@ main(int argc, char **argv)
 	pthread_t	 stats_thread;
 	pthread_t	*syslog_workers;
 	pthread_t	*gelf_workers;
-	struct	thr_dat	 	 workers_data;
-	struct	syslog_thr_dat	*syslog_thr_ptr;
-	struct	gelf_thr_dat	*gelf_thr_ptr;
+	struct thr_dat	 	 workers_data;
+	struct syslog_thr_dat	*syslog_thr_ptr;
+	struct gelf_thr_dat	*gelf_thr_ptr;
 
 	char	tname[17];
 	amqp_rpc_reply_t r;

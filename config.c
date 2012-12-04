@@ -64,7 +64,7 @@ int parse_config()
 			continue;
 		*val = '\0';
 		val++;
-#define CFGCPY(dst)	strncpy(dst, val, sizeof(dst));
+#define CFGCPY(dst)	strncpy(dst, val, sizeof(dst)-1);
 #define CFGNCPY(dst)	dst = (int)strtol(val,(char **)NULL,10);
 		if (strcasecmp(key, "amqp_host") == 0) {
 			CFGCPY(cfg.amqp.host);
