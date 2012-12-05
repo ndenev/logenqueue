@@ -49,12 +49,16 @@
 #include <pthread_np.h>
 #endif
 
-#include <zlib.h>
 #include <amqp.h>
 #include <amqp_framing.h>
 
 #include "logenqueue.h"
 #include "config.h"
+
+#ifdef DO_ZLIB
+#include <zlib.h>
+#endif
+
 
 struct  config  cfg;
 
@@ -278,10 +282,12 @@ syslog_worker(void *arg)
 	struct	tm tim;
 	time_t	ts;
 	amqp_bytes_t msgb;
+#ifdef DO_ZLIB
 	int	flush;
 	z_stream strm;
-	u_char	in[SYSLOG_BUF*3];
 	u_char	out[SYSLOG_BUF*3];
+#endif
+	u_char	in[SYSLOG_BUF*3];
 
 	//DEBUG("syslog worker thread #%d started\n", self->id);
 
@@ -339,6 +345,7 @@ syslog_worker(void *arg)
 			"1.0", host, msg, esc_buf, (long int)ts,
 			severity, fac2str(facility), "", 0);
 
+#ifdef DO_ZLIB
 		/* allocate deflate state */
 		strm.zalloc = Z_NULL;
 		strm.zfree = Z_NULL;
@@ -356,7 +363,10 @@ syslog_worker(void *arg)
 
 		msgb.len = (SYSLOG_BUF*3) - strm.avail_out;
 		msgb.bytes = out;
-
+#else
+		msgb.len = strlen((char *)in);
+		msgb.bytes = in;
+#endif
 		q = amqp_basic_publish(amqp.conn, 1,
 					amqp_cstring_bytes(cfg.amqp.ex_name),
 					amqp_cstring_bytes(cfg.amqp.host), 0, 0,

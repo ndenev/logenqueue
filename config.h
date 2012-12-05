@@ -31,6 +31,8 @@
 #include <sys/types.h>
 #include <sys/param.h>
 
+#define	DO_ZLIB	1
+
 #define HOST_NAME_MAX	255
 
 int	parse_config();
