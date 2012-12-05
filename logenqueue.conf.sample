@@ -1,7 +1,7 @@
-amqp_host=10.128.2.10
+amqp_host=10.0.0.13
 amqp_port=5672
-amqp_user=graylog2
-amqp_pass=gaylord
+amqp_user=guest
+amqp_pass=guest
 amqp_vhost=/
 amqp_exchange_name=graylog2
 amqp_exchange_type=topic
