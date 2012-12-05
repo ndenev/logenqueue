@@ -301,7 +301,7 @@ syslog_worker(void *arg)
 	for (;;) {
 		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
 		if (r < 0) {
-			printf("recvfrom problem\n");
+			printf("recvfrom error: %s\n", strerror(errno));
 			continue;
 		}
 		buf[r] = '\0';
@@ -397,7 +397,7 @@ gelf_worker(void *arg)
 	for (;;) {
 		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
 		if (r < 0) {
-			printf("recvfrom problem\n");
+			printf("recvfrom error: %s\n", strerror(errno));
 			continue;
 		}
 		self->msg_count++;
