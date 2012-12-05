@@ -304,10 +304,6 @@ syslog_worker(void *arg)
 			printf("recvfrom problem\n");
 			continue;
 		}
-		if (r == 0) {
-			printf("zero data read\n");
-			continue;
-		}
 		buf[r] = '\0';
 		self->msg_count++;
 
@@ -403,9 +399,6 @@ gelf_worker(void *arg)
 		if (r < 0) {
 			printf("recvfrom problem\n");
 			continue;
-		}
-		if (r == 0) {
-			printf("zero data read\n");
 		}
 		self->msg_count++;
 #define	GELF_MAGIC(type) bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
