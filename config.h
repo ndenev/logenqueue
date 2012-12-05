@@ -30,10 +30,9 @@
 
 #include <sys/types.h>
 #include <sys/param.h>
+#include <limits.h>
 
 #define	DO_ZLIB	1
-
-#define HOST_NAME_MAX	255
 
 int	parse_config();
 int	parse_opts(int*, char***);
@@ -50,7 +49,7 @@ extern  int     verbose;
 #define AMQP_EXNAME
 
 struct amqp_config {
-	char	host[HOST_NAME_MAX];
+	char	host[_POSIX_HOST_NAME_MAX];
 	u_int	port;
 	char	user[255];
 	char	pass[255];
@@ -61,14 +60,14 @@ struct amqp_config {
 };
 
 struct syslog_listener {
-	char	bind[HOST_NAME_MAX];
+	char	bind[_POSIX_HOST_NAME_MAX];
 	u_int	port;
 	int	fd;
 	int	workers;
 };
 
 struct gelf_listener {
-	char	bind[HOST_NAME_MAX];
+	char	bind[_POSIX_HOST_NAME_MAX];
 	u_int	port;
 	int	fd;
 	int	workers;
