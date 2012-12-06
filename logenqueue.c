@@ -114,6 +114,7 @@ void
 message_stats(void *arg)
 {
 	struct	thr_dat *workers_data = (struct thr_dat *)arg;
+	struct	dnscache *cache = workers_data->syslog->cache;
 	struct	syslog_thr_dat *sysl_thr_ptr;
 	struct	gelf_thr_dat *gelf_thr_ptr;
 	u_int	message_count;
@@ -125,8 +126,25 @@ message_stats(void *arg)
 		message_count = 0;
 		cache_hits = cache_missess = cache_full = cache_size = 0;
 
-		DEBUG("------------------------------------------------------------------------------\n");
-		DEBUG("thr	| size	| full	| hits	| missess\n");
+		/* get dns cache stats */
+		pthread_rwlock_wrlock(cache->lock);
+		cache_hits	= cache->hit;
+		cache_missess	= cache->miss;
+		cache_full	= cache->full;
+		cache_size	= cache->size;
+		cache->hit = 0;
+		cache->miss = 0;
+		pthread_rwlock_unlock(cache->lock);
+
+		DEBUG("dnscache stats\n");
+		DEBUG("----------------------------------\n");
+		DEBUG("size	| full	| hits	| missess\n");
+		DEBUG("%d	| %d	| %d	| %d\n", cache_size, cache_full,
+			cache_hits, cache_missess);
+		DEBUG("\n");
+		DEBUG("dns cache hits: %d/sec\n", cache_hits / STATS_TIMEOUT);
+		DEBUG("dns cache missess: %d/sec\n", cache_missess / STATS_TIMEOUT);
+
 		for (i = 0; i < cfg.syslog.workers; i++) {
 			sysl_thr_ptr = workers_data->syslog+i;
 			pthread_mutex_lock(&sysl_thr_ptr->stat_mtx);
@@ -137,24 +155,8 @@ message_stats(void *arg)
 			} else {
 				message_count += (UINT_MAX - sysl_thr_ptr->old_msg_count) + sysl_thr_ptr->msg_count;
 			}
-			/* get dns cache stats */
-			cache_hits	+= sysl_thr_ptr->cache->hit;
-			cache_missess	+= sysl_thr_ptr->cache->miss;
-			cache_full	+= sysl_thr_ptr->cache->full;
-			cache_size	+= sysl_thr_ptr->cache->size;
-			DEBUG("%d	| %d	| %d	| %d	| %d\n",
-				i,
-				sysl_thr_ptr->cache->size,
-				sysl_thr_ptr->cache->full,
-				sysl_thr_ptr->cache->hit,
-				sysl_thr_ptr->cache->miss);
-			sysl_thr_ptr->cache->hit = 0;
-			sysl_thr_ptr->cache->miss = 0;
 			pthread_mutex_unlock(&sysl_thr_ptr->stat_mtx);
 		}
-		DEBUG("total dns cache size: %d\n", cache_size);
-		DEBUG("total dns cache hits/missess: %d/%d\n", cache_hits, cache_missess);
-		DEBUG("total dns cache full events: %d\n", cache_full);
 		for (i = 0; i < cfg.gelf.workers; i++) {
 			gelf_thr_ptr = workers_data->gelf+i;
 			pthread_mutex_lock(&gelf_thr_ptr->stat_mtx);
@@ -250,49 +252,53 @@ trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, str
 	void	*src = from->sa_data+2;
 
 	int i;
-	int oldest;
-	int howold;
+	int oldest_ts;
+	int oldest_idx;
+	int now = time(NULL);
 
 	for (i = 0; i < DNSCACHESIZE; i++) {
+		pthread_rwlock_rdlock(cache->lock);
 		if (!memcmp(&cache->entry[i].from, from, sizeof(struct sockaddr))) {
 			pthread_mutex_lock(&self->stat_mtx);
 			cache->hit++;
 			pthread_mutex_unlock(&self->stat_mtx);
 			strncpy(host, cache->entry[i].host, _POSIX_HOST_NAME_MAX);
-			cache->entry[i].ts = time(NULL);
+			cache->entry[i].ts = now;
+			pthread_rwlock_unlock(cache->lock);
 			return;
 		}
+		pthread_rwlock_unlock(cache->lock);
 	}
 
-	howold = time(NULL);
-	oldest = DNSCACHESIZE+1;
+	hp = gethostbyaddr((const void *)src, sizeof(struct in_addr), AF_INET);
+	if (hp)
+		strncpy(host, hp->h_name, _POSIX_HOST_NAME_MAX);
+	else
+		inet_ntop(from->sa_family, src, host, _POSIX_HOST_NAME_MAX);
+
+	oldest_ts = now;
+	oldest_idx = DNSCACHESIZE+1;
+
 	for (i = 0; i < DNSCACHESIZE; i++) {
-		if (cache->entry[i].ts < howold) {
-			howold = cache->entry[i].ts;
-			oldest = i;
+		if (cache->entry[i].ts < oldest_ts) {
+			oldest_ts = cache->entry[i].ts;
+			oldest_idx = i;
 		}
 	}
 
-	if (oldest == DNSCACHESIZE+1) {
-		pthread_mutex_lock(&self->stat_mtx);
+	pthread_rwlock_wrlock(cache->lock);
+	cache->miss++;
+	if (oldest_idx == DNSCACHESIZE+1 || cache->size == DNSCACHESIZE) {
 		cache->full++;
-		cache->miss++;
-		pthread_mutex_unlock(&self->stat_mtx);
 	} else {
-		pthread_mutex_lock(&self->stat_mtx);
-		cache->miss++;
-		if (cache->entry[oldest].ts == 0)
+		if (cache->entry[oldest_idx].ts == 0)
 			cache->size++;	
-		pthread_mutex_unlock(&self->stat_mtx);
 
-		if ((hp = gethostbyaddr((const void *)src, sizeof(struct in_addr), AF_INET)))
-			strncpy(host, hp->h_name, _POSIX_HOST_NAME_MAX);
-		else
-			inet_ntop(from->sa_family, src, host, _POSIX_HOST_NAME_MAX);
-		memcpy(&cache->entry[oldest].from, from, sizeof(struct sockaddr)); 
-		strncpy(cache->entry[oldest].host, host, _POSIX_HOST_NAME_MAX);
-		cache->entry[oldest].ts = time(NULL);
+		memcpy(&cache->entry[oldest_idx].from, from, sizeof(struct sockaddr)); 
+		strncpy(cache->entry[oldest_idx].host, host, _POSIX_HOST_NAME_MAX);
+		cache->entry[oldest_idx].ts = now;
 	}
+	pthread_rwlock_unlock(cache->lock);
 }
 
 void
@@ -304,7 +310,6 @@ syslog_worker(void *arg)
 	struct  sockaddr from;
 	u_int	ip_len;
 	char 	host[_POSIX_HOST_NAME_MAX+1];
-	struct	dnscache cache;
 	char	*msg, *msg2;
 	u_char	buf[SYSLOG_BUF];
 	u_char	esc_buf[SYSLOG_BUF*2];
@@ -322,9 +327,6 @@ syslog_worker(void *arg)
 	u_char	in[SYSLOG_BUF*3];
 
 	//DEBUG("syslog worker thread #%d started\n", self->id);
-
-	memset(&cache, 0, sizeof(cache));
-	self->cache = &cache;
 
 	if (amqp_link(&amqp) < 0) {
 		printf("can't connect to amqp from syslog thr #%d\n", self->id);
@@ -344,7 +346,7 @@ syslog_worker(void *arg)
 		self->msg_count++;
 		pthread_mutex_unlock(&self->stat_mtx);
 
-		trytogetrdns(self, &from, host, &cache);
+		trytogetrdns(self, &from, host, self->cache);
 
 		json_escape((char *)esc_buf, (char *)buf, sizeof(esc_buf));
 
@@ -522,7 +524,8 @@ main(int argc, char **argv)
 	struct thr_dat	 	 workers_data;
 	struct syslog_thr_dat	*syslog_thr_ptr;
 	struct gelf_thr_dat	*gelf_thr_ptr;
-
+	struct dnscache		dnscache;
+	pthread_rwlock_t	dnscache_lock;
 	char	tname[17];
 	amqp_rpc_reply_t r;
 
@@ -581,9 +584,14 @@ main(int argc, char **argv)
 	workers_data.syslog = calloc(cfg.syslog.workers, sizeof(struct syslog_thr_dat));
 	workers_data.gelf  = calloc(cfg.gelf.workers, sizeof(struct gelf_thr_dat));
 
+	pthread_rwlock_init(&dnscache_lock, NULL);
+	memset(&dnscache, 0, sizeof(dnscache));
+	dnscache.lock = &dnscache_lock;
+
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		syslog_thr_ptr = workers_data.syslog+i;
 		syslog_thr_ptr->id = i;
+		syslog_thr_ptr->cache = &dnscache;
 		pthread_mutex_init(&syslog_thr_ptr->stat_mtx, NULL);
 		pthread_create(syslog_workers+i, NULL,
 				(void *)&syslog_worker, syslog_thr_ptr);

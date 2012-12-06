@@ -37,7 +37,7 @@
 int     debug = 0;
 int     verbose = 0;
 
-#define DNSCACHESIZE 2048
+#define DNSCACHESIZE 4096
 struct dnscache_entry {
         struct  sockaddr from;
         char    host[_POSIX_HOST_NAME_MAX+1];
@@ -50,6 +50,7 @@ struct dnscache {
         int     hit;
         int     miss;
         int     full;
+	pthread_rwlock_t *lock;
 };
 
 struct syslog_thr_dat {
