@@ -39,7 +39,7 @@ int     verbose = 0;
 
 #define DNSCACHESIZE 4096
 struct dnscache_entry {
-        struct  sockaddr from;
+	u_int32_t       from;
         char    host[_POSIX_HOST_NAME_MAX+1];
         int     ts;
 };

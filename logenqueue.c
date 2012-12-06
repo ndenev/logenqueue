@@ -258,7 +258,7 @@ trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, str
 
 	for (i = 0; i < DNSCACHESIZE; i++) {
 		pthread_rwlock_rdlock(cache->lock);
-		if (!memcmp(&cache->entry[i].from, from, sizeof(struct sockaddr))) {
+		if (cache->entry[i].from == *(u_int32_t *)src) {
 			pthread_mutex_lock(&self->stat_mtx);
 			cache->hit++;
 			pthread_mutex_unlock(&self->stat_mtx);
@@ -294,7 +294,7 @@ trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, str
 		if (cache->entry[oldest_idx].ts == 0)
 			cache->size++;	
 
-		memcpy(&cache->entry[oldest_idx].from, from, sizeof(struct sockaddr)); 
+		cache->entry[oldest_idx].from = *(u_int32_t *)src;
 		strncpy(cache->entry[oldest_idx].host, host, _POSIX_HOST_NAME_MAX);
 		cache->entry[oldest_idx].ts = now;
 	}
