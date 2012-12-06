@@ -216,13 +216,6 @@ parse_syslog_prio(char *msg, int *prio)
 }
 
 
-/*
- * This function tries do to reverse DNS
- * on the given host and return the hostname,
- * or if it fails returns the IP.
- * XXX TODO: Implement caching.
- */
-//pthread_rwlock_t dnscache_lock;
 struct dnscache {
 	struct	sockaddr from;
 	char	host[_POSIX_HOST_NAME_MAX+1];
@@ -230,6 +223,11 @@ struct dnscache {
 };
 #define	DNSCACHESIZE 2048
 
+/*
+ * This function tries do to reverse DNS
+ * on the given host and return the hostname,
+ * or if it fails returns the IP.
+ */
 void
 trytogetrdns(struct sockaddr *from, char *host, struct dnscache *cache)
 {
@@ -239,14 +237,12 @@ trytogetrdns(struct sockaddr *from, char *host, struct dnscache *cache)
 	int i;
 	int oldest;
 
-	//pthread_rwlock_rdlock(&dnscache_lock);
 	oldest = time(NULL);
 	for (i = 0; i < DNSCACHESIZE; i++) {
 		if (!memcmp(&cache[i].from, from, sizeof(struct sockaddr))) {
 			//DEBUG("+");
 			strncpy(host, cache[i].host, _POSIX_HOST_NAME_MAX);
 			cache[i].ts = time(NULL);
-			//pthread_rwlock_unlock(&dnscache_lock);
 			return;
 		}
 	}
@@ -259,12 +255,9 @@ trytogetrdns(struct sockaddr *from, char *host, struct dnscache *cache)
 		strncpy(host, hp->h_name, _POSIX_HOST_NAME_MAX);
 	else
 		inet_ntop(from->sa_family, src, host, _POSIX_HOST_NAME_MAX);
-	//pthread_rwlock_unlock(&dnscache_lock);
-	//pthread_rwlock_wrlock(&dnscache_lock);	
 	memcpy(&cache[oldest].from, from, sizeof(struct sockaddr)); 
 	strncpy(cache[oldest].host, host, _POSIX_HOST_NAME_MAX);
 	cache[oldest].ts = time(NULL);
-	//pthread_rwlock_unlock(&dnscache_lock);	
 }
 
 void
@@ -549,9 +542,6 @@ main(int argc, char **argv)
 
 	workers_data.syslog = calloc(cfg.syslog.workers, sizeof(struct syslog_thr_dat));
 	workers_data.gelf  = calloc(cfg.gelf.workers, sizeof(struct gelf_thr_dat));
-
-	//memset(&cache, 0, sizeof(struct dnscache) * DNSCACHESIZE);
-	//pthread_rwlock_init(&dnscache_lock, NULL);
 
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		syslog_thr_ptr = workers_data.syslog+i;
