@@ -28,6 +28,8 @@
 #ifndef LOGENQUEUE_H_INCLUDED
 #define LOGENQUEUE_H_INCLUDED
 
+#include <limits.h>
+
 #define LOG(...)	printf(__VA_ARGS__)
 #define DEBUG(...)      if (debug>0) printf(__VA_ARGS__)
 #define VERBOSE(...)    if (verbose>0) printf(__VA_ARGS__)
@@ -35,11 +37,27 @@
 int     debug = 0;
 int     verbose = 0;
 
+#define DNSCACHESIZE 2048
+struct dnscache_entry {
+        struct  sockaddr from;
+        char    host[_POSIX_HOST_NAME_MAX+1];
+        int     ts;
+};
+
+struct dnscache {
+        struct  dnscache_entry entry[DNSCACHESIZE];
+        int     size;
+        int     hit;
+        int     miss;
+        int     full;
+};
+
 struct syslog_thr_dat {
 	int     id;
 	u_int	msg_count;
 	u_int	old_msg_count;
 	pthread_mutex_t stat_mtx;
+	struct dnscache *cache;
 };
 
 struct gelf_thr_dat {

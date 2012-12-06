@@ -113,26 +113,48 @@ amqp_link(struct amqp_state_t *amqp)
 void
 message_stats(void *arg)
 {
-	struct thr_dat *workers_data = (struct thr_dat *)arg;
-	struct syslog_thr_dat *sysl_thr_ptr;
-	struct gelf_thr_dat *gelf_thr_ptr;
+	struct	thr_dat *workers_data = (struct thr_dat *)arg;
+	struct	syslog_thr_dat *sysl_thr_ptr;
+	struct	gelf_thr_dat *gelf_thr_ptr;
 	u_int	message_count;
-	int i;
+	int	i;
+	int	cache_hits, cache_missess, cache_full, cache_size;
 
 	for (;;) {
 		sleep(STATS_TIMEOUT);
 		message_count = 0;
+		cache_hits = cache_missess = cache_full = cache_size = 0;
+
+		DEBUG("------------------------------------------------------------------------------\n");
+		DEBUG("thr	| size	| full	| hits	| missess\n");
 		for (i = 0; i < cfg.syslog.workers; i++) {
 			sysl_thr_ptr = workers_data->syslog+i;
 			pthread_mutex_lock(&sysl_thr_ptr->stat_mtx);
+			/* get message count stats and detect wraps */
 			if (sysl_thr_ptr->msg_count >= sysl_thr_ptr->old_msg_count) {
 				message_count += sysl_thr_ptr->msg_count - sysl_thr_ptr->old_msg_count;
 				sysl_thr_ptr->old_msg_count = sysl_thr_ptr->msg_count;
 			} else {
 				message_count += (UINT_MAX - sysl_thr_ptr->old_msg_count) + sysl_thr_ptr->msg_count;
 			}
+			/* get dns cache stats */
+			cache_hits	+= sysl_thr_ptr->cache->hit;
+			cache_missess	+= sysl_thr_ptr->cache->miss;
+			cache_full	+= sysl_thr_ptr->cache->full;
+			cache_size	+= sysl_thr_ptr->cache->size;
+			DEBUG("%d	| %d	| %d	| %d	| %d\n",
+				i,
+				sysl_thr_ptr->cache->size,
+				sysl_thr_ptr->cache->full,
+				sysl_thr_ptr->cache->hit,
+				sysl_thr_ptr->cache->miss);
+			sysl_thr_ptr->cache->hit = 0;
+			sysl_thr_ptr->cache->miss = 0;
 			pthread_mutex_unlock(&sysl_thr_ptr->stat_mtx);
 		}
+		DEBUG("total dns cache size: %d\n", cache_size);
+		DEBUG("total dns cache hits/missess: %d/%d\n", cache_hits, cache_missess);
+		DEBUG("total dns cache full events: %d\n", cache_full);
 		for (i = 0; i < cfg.gelf.workers; i++) {
 			gelf_thr_ptr = workers_data->gelf+i;
 			pthread_mutex_lock(&gelf_thr_ptr->stat_mtx);
@@ -149,6 +171,7 @@ message_stats(void *arg)
 #if __FreeBSD__ || __linux__
 		setproctitle("%d msg/sec", message_count);
 #endif
+		VERBOSE("\n");
 	};
 }
 
@@ -215,49 +238,61 @@ parse_syslog_prio(char *msg, int *prio)
 	return (strchr(msg,'>')+1);
 }
 
-
-struct dnscache {
-	struct	sockaddr from;
-	char	host[_POSIX_HOST_NAME_MAX+1];
-	int	ts;
-};
-#define	DNSCACHESIZE 2048
-
 /*
  * This function tries do to reverse DNS
  * on the given host and return the hostname,
  * or if it fails returns the IP.
  */
 void
-trytogetrdns(struct sockaddr *from, char *host, struct dnscache *cache)
+trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, struct dnscache *cache)
 {
 	struct	hostent *hp = NULL;
 	void	*src = from->sa_data+2;
 
 	int i;
 	int oldest;
+	int howold;
 
-	oldest = time(NULL);
 	for (i = 0; i < DNSCACHESIZE; i++) {
-		if (!memcmp(&cache[i].from, from, sizeof(struct sockaddr))) {
-			//DEBUG("+");
-			strncpy(host, cache[i].host, _POSIX_HOST_NAME_MAX);
-			cache[i].ts = time(NULL);
+		if (!memcmp(&cache->entry[i].from, from, sizeof(struct sockaddr))) {
+			pthread_mutex_lock(&self->stat_mtx);
+			cache->hit++;
+			pthread_mutex_unlock(&self->stat_mtx);
+			strncpy(host, cache->entry[i].host, _POSIX_HOST_NAME_MAX);
+			cache->entry[i].ts = time(NULL);
 			return;
 		}
 	}
-	//DEBUG("-");
-	for (i = 0; i < DNSCACHESIZE; i++)
-		if (cache[i].ts < oldest)
-			oldest = cache[i].ts;
 
-	if ((hp = gethostbyaddr((const void *)src, sizeof(struct in_addr), AF_INET)))
-		strncpy(host, hp->h_name, _POSIX_HOST_NAME_MAX);
-	else
-		inet_ntop(from->sa_family, src, host, _POSIX_HOST_NAME_MAX);
-	memcpy(&cache[oldest].from, from, sizeof(struct sockaddr)); 
-	strncpy(cache[oldest].host, host, _POSIX_HOST_NAME_MAX);
-	cache[oldest].ts = time(NULL);
+	howold = time(NULL);
+	oldest = DNSCACHESIZE+1;
+	for (i = 0; i < DNSCACHESIZE; i++) {
+		if (cache->entry[i].ts < howold) {
+			howold = cache->entry[i].ts;
+			oldest = i;
+		}
+	}
+
+	if (oldest == DNSCACHESIZE+1) {
+		pthread_mutex_lock(&self->stat_mtx);
+		cache->full++;
+		cache->miss++;
+		pthread_mutex_unlock(&self->stat_mtx);
+	} else {
+		pthread_mutex_lock(&self->stat_mtx);
+		cache->miss++;
+		if (cache->entry[oldest].ts == 0)
+			cache->size++;	
+		pthread_mutex_unlock(&self->stat_mtx);
+
+		if ((hp = gethostbyaddr((const void *)src, sizeof(struct in_addr), AF_INET)))
+			strncpy(host, hp->h_name, _POSIX_HOST_NAME_MAX);
+		else
+			inet_ntop(from->sa_family, src, host, _POSIX_HOST_NAME_MAX);
+		memcpy(&cache->entry[oldest].from, from, sizeof(struct sockaddr)); 
+		strncpy(cache->entry[oldest].host, host, _POSIX_HOST_NAME_MAX);
+		cache->entry[oldest].ts = time(NULL);
+	}
 }
 
 void
@@ -269,7 +304,7 @@ syslog_worker(void *arg)
 	struct  sockaddr from;
 	u_int	ip_len;
 	char 	host[_POSIX_HOST_NAME_MAX+1];
-	struct	dnscache cache[DNSCACHESIZE];
+	struct	dnscache cache;
 	char	*msg, *msg2;
 	u_char	buf[SYSLOG_BUF];
 	u_char	esc_buf[SYSLOG_BUF*2];
@@ -287,6 +322,9 @@ syslog_worker(void *arg)
 	u_char	in[SYSLOG_BUF*3];
 
 	//DEBUG("syslog worker thread #%d started\n", self->id);
+
+	memset(&cache, 0, sizeof(cache));
+	self->cache = &cache;
 
 	if (amqp_link(&amqp) < 0) {
 		printf("can't connect to amqp from syslog thr #%d\n", self->id);
@@ -306,7 +344,7 @@ syslog_worker(void *arg)
 		self->msg_count++;
 		pthread_mutex_unlock(&self->stat_mtx);
 
-		trytogetrdns(&from, host, cache);
+		trytogetrdns(self, &from, host, &cache);
 
 		json_escape((char *)esc_buf, (char *)buf, sizeof(esc_buf));
 
