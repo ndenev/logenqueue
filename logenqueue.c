@@ -124,21 +124,25 @@ message_stats(void *arg)
 		message_count = 0;
 		for (i = 0; i < cfg.syslog.workers; i++) {
 			sysl_thr_ptr = workers_data->syslog+i;
+			pthread_mutex_lock(&sysl_thr_ptr->stat_mtx);
 			if (sysl_thr_ptr->msg_count >= sysl_thr_ptr->old_msg_count) {
 				message_count += sysl_thr_ptr->msg_count - sysl_thr_ptr->old_msg_count;
 				sysl_thr_ptr->old_msg_count = sysl_thr_ptr->msg_count;
 			} else {
 				message_count += (UINT_MAX - sysl_thr_ptr->old_msg_count) + sysl_thr_ptr->msg_count;
 			}
+			pthread_mutex_unlock(&sysl_thr_ptr->stat_mtx);
 		}
 		for (i = 0; i < cfg.gelf.workers; i++) {
 			gelf_thr_ptr = workers_data->gelf+i;
+			pthread_mutex_lock(&gelf_thr_ptr->stat_mtx);
 			if (gelf_thr_ptr->msg_count >= gelf_thr_ptr->old_msg_count) {
 				message_count += gelf_thr_ptr->msg_count - gelf_thr_ptr->old_msg_count;
 				gelf_thr_ptr->old_msg_count = gelf_thr_ptr->msg_count;
 			} else {
 				message_count += (UINT_MAX - gelf_thr_ptr->old_msg_count) + gelf_thr_ptr->msg_count;
 			}
+			pthread_mutex_unlock(&gelf_thr_ptr->stat_mtx);
 		}
 		message_count = message_count / STATS_TIMEOUT;
 		VERBOSE("incoming msg rate  : %d msg/sec\n", message_count);
@@ -305,7 +309,9 @@ syslog_worker(void *arg)
 			continue;
 		}
 		buf[r] = '\0';
+		pthread_mutex_lock(&self->stat_mtx);
 		self->msg_count++;
+		pthread_mutex_unlock(&self->stat_mtx);
 
 		trytogetrdns(&from, host, cache);
 
@@ -400,7 +406,9 @@ gelf_worker(void *arg)
 			printf("recvfrom error: %s\n", strerror(errno));
 			continue;
 		}
+		pthread_mutex_lock(&self->stat_mtx);
 		self->msg_count++;
+		pthread_mutex_unlock(&self->stat_mtx);
 #define	GELF_MAGIC(type) bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
 		if (!GELF_MAGIC(ZLIBD)) {
@@ -548,6 +556,7 @@ main(int argc, char **argv)
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		syslog_thr_ptr = workers_data.syslog+i;
 		syslog_thr_ptr->id = i;
+		pthread_mutex_init(&syslog_thr_ptr->stat_mtx, NULL);
 		pthread_create(syslog_workers+i, NULL,
 				(void *)&syslog_worker, syslog_thr_ptr);
 		snprintf(tname, sizeof(tname), "syslog_wrkr[%d]", i);
@@ -559,6 +568,7 @@ main(int argc, char **argv)
 	for (i = 0; i < cfg.gelf.workers; i++) {
 		gelf_thr_ptr = workers_data.gelf+i;
 		gelf_thr_ptr->id = i;
+		pthread_mutex_init(&gelf_thr_ptr->stat_mtx, NULL);
 		pthread_create(gelf_workers+i, NULL,
 				(void *)&gelf_worker, gelf_thr_ptr);
 		snprintf(tname, sizeof(tname), "gelf_wrkr[%d]", i);

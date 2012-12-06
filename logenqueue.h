@@ -39,12 +39,14 @@ struct syslog_thr_dat {
 	int     id;
 	u_int	msg_count;
 	u_int	old_msg_count;
+	pthread_mutex_t stat_mtx;
 };
 
 struct gelf_thr_dat {
 	int     id;
 	u_int	msg_count;
 	u_int	old_msg_count;
+	pthread_mutex_t stat_mtx;
 };
 
 struct thr_dat {
@@ -53,7 +55,7 @@ struct thr_dat {
 };
 
 static const char gelf_magic[3][2] = {
-	{ 0x78, 0x9c }, 
+	{ 0x78, 0x9c },
 	{ 0x1f, 0x8b },
 	{ 0x1e, 0x0f },
 };
