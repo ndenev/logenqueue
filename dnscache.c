@@ -148,7 +148,6 @@ dnscache_expire(void *arg)
 		//DEBUG("dnscache cleaner thread sleeping for %d secs\n", oldest_ts);
 		sleep(oldest_ts);
 		if (dying) {
-			DEBUG("shutdown dnscache cleaner thread\n");
 			pthread_exit(NULL);
 		}
 		pthread_rwlock_wrlock(cache->lock);

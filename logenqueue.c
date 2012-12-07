@@ -165,7 +165,6 @@ message_stats(void *arg)
 		i = pthread_cond_timedwait(&stats_nap, &dummy, &ts);
 		pthread_mutex_unlock(&dummy);
 		if (dying) {
-			DEBUG("shutdown message stats thread\n");
 			pthread_exit(NULL);
 		}
 		msg_count = msg_count_syslog = msg_count_gelf = 0;
@@ -325,7 +324,6 @@ syslog_worker(void *arg)
 	for (;;) {
 		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
 		if (dying) {
-			DEBUG("shutdown syslog worker #%d\n", self->id);
 			pthread_exit(NULL);
 		}
 		if (r < 0) {
@@ -427,7 +425,6 @@ gelf_worker(void *arg)
 	for (;;) {
 		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
 		if (dying) {
-			DEBUG("shutdown gelf worker #%d\n", self->id);
 			pthread_exit(NULL);
 		}
 		if (r < 0) {
