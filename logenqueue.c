@@ -140,14 +140,10 @@ message_stats(void *arg)
 		cache->miss = 0;
 		pthread_rwlock_unlock(cache->lock);
 
-		DEBUG("dnscache stats\n");
-		DEBUG("----------------------------------\n");
-		DEBUG("size	| full	| hits	| missess\n");
-		DEBUG("%d	| %d	| %d	| %d\n", cache_size, cache_full,
-			cache_hits, cache_missess);
-		DEBUG("\n");
-		DEBUG("dns cache hits: %d/sec\n", cache_hits / STATS_TIMEOUT);
-		DEBUG("dns cache missess: %d/sec\n", cache_missess / STATS_TIMEOUT);
+		DEBUG("dns cache size : %d/%d\n", cache_size, DNSCACHESIZE);
+		DEBUG("dns cache hit  : %d/sec\n", cache_hits / STATS_TIMEOUT);
+		DEBUG("dns cache miss : %d/sec\n", cache_missess / STATS_TIMEOUT);
+		DEBUG("dns cache full : %d\n", cache_full);
 
 		for (i = 0; i < cfg.syslog.workers; i++) {
 			stp = &workers_data->syslog[i];
