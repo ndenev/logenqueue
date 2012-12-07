@@ -122,11 +122,11 @@ message_stats(void *arg)
 	int	cache_hits, cache_missess, cache_full, cache_size;
 
 	for (;;) {
+		sleep(STATS_TIMEOUT);
 		if (dying) {
 			//DEBUG("shutdown message stats thread\n");
 			pthread_exit(NULL);
 		}
-		sleep(STATS_TIMEOUT);
 		msg_count = msg_count_syslog = msg_count_gelf = 0;
 		cache_hits = cache_missess = cache_full = cache_size = 0;
 
