@@ -192,6 +192,8 @@ die(int sig)
 {
 	VERBOSE("Got shutdown request, waiting threads to finish\n");
 	dying = 1;
+	shutdown(cfg.syslog.fd, SHUT_RD);
+	shutdown(cfg.gelf.fd, SHUT_RD); 
 }
 
 /*
@@ -395,11 +397,11 @@ syslog_worker(void *arg)
 	self->msg_count = 0;
 	self->old_msg_count = 0;
 	for (;;) {
+		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
 		if (dying) {
 			//DEBUG("shutdown syslog worker #%d\n", self->id);
 			pthread_exit(NULL);
 		}
-		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
 		if (r < 0) {
 			printf("recvfrom error: %s\n", strerror(errno));
 			continue;
@@ -497,11 +499,11 @@ gelf_worker(void *arg)
 	self->msg_count = 0;
 	self->old_msg_count = 0;
 	for (;;) {
+		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
 		if (dying) {
 			//DEBUG("shutdown gelf worker #%d\n", self->id);
 			pthread_exit(NULL);
 		}
-		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
 		if (r < 0) {
 			printf("recvfrom error: %s\n", strerror(errno));
 			continue;
