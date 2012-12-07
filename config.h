@@ -37,9 +37,6 @@
 int	parse_config();
 int	parse_opts(int*, char***);
 
-extern  int     debug;
-extern  int     verbose;
-
 /* DEFAULTS */
 #define AMQP_HOST	"localhost"
 #define AMQP_PORT	5672
