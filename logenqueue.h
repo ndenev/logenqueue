@@ -38,6 +38,7 @@ int     debug = 0;
 int     verbose = 0;
 
 #define DNSCACHESIZE 4096
+#define DNSCACHETTL 300
 struct dnscache_entry {
 	u_int32_t       from;
         char    host[_POSIX_HOST_NAME_MAX+1];
