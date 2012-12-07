@@ -123,7 +123,7 @@ message_stats(void *arg)
 
 	for (;;) {
 		if (dying) {
-			DEBUG("shutdown message stats thread\n");
+			//DEBUG("shutdown message stats thread\n");
 			pthread_exit(NULL);
 		}
 		sleep(STATS_TIMEOUT);
@@ -337,7 +337,7 @@ dnscache_expire(void *arg)
 		//DEBUG("dnscache cleaner thread sleeping for %d secs\n", oldest_ts);
 		sleep(oldest_ts);
 		if (dying) {
-			DEBUG("shutdown dnscache cleaner thread");
+			//DEBUG("shutdown dnscache cleaner thread");
 			pthread_exit(NULL);
 		}
 		pthread_rwlock_wrlock(cache->lock);
@@ -396,7 +396,7 @@ syslog_worker(void *arg)
 	self->old_msg_count = 0;
 	for (;;) {
 		if (dying) {
-			DEBUG("shutdown syslog worker #%d\n", self->id);
+			//DEBUG("shutdown syslog worker #%d\n", self->id);
 			pthread_exit(NULL);
 		}
 		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
@@ -498,7 +498,7 @@ gelf_worker(void *arg)
 	self->old_msg_count = 0;
 	for (;;) {
 		if (dying) {
-			DEBUG("shutdown gelf worker #%d\n", self->id);
+			//DEBUG("shutdown gelf worker #%d\n", self->id);
 			pthread_exit(NULL);
 		}
 		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
