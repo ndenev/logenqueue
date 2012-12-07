@@ -168,9 +168,9 @@ message_stats(void *arg)
 			}
 			pthread_mutex_unlock(&gtp->stat_mtx);
 		}
-		msg_count = ( msg_count_syslog + msg_count_gelf ) / STATS_TIMEOUT;
 		msg_count_syslog = msg_count_syslog / STATS_TIMEOUT;
 		msg_count_gelf = msg_count_gelf / STATS_TIMEOUT;
+		msg_count = msg_count_syslog + msg_count_gelf;
 		VERBOSE("msg rate total  : %d msg/sec\n", msg_count);
 		VERBOSE("msg rate syslog : %d msg/sec\n", msg_count_syslog);
 		VERBOSE("msg rate gelf   : %d msg/sec\n", msg_count_gelf);
