@@ -378,11 +378,6 @@ syslog_worker(void *arg)
 	struct	tm tim;
 	time_t	ts;
 	amqp_bytes_t msgb;
-#ifdef DO_ZLIB
-	int	ret, flush;
-	z_stream strm;
-	u_char	out[SYSLOG_BUF*3];
-#endif
 	u_char	in[SYSLOG_BUF*3];
 
 	//DEBUG("syslog worker thread #%d started\n", self->id);
