@@ -379,7 +379,7 @@ syslog_worker(void *arg)
 	time_t	ts;
 	amqp_bytes_t msgb;
 #ifdef DO_ZLIB
-	int	flush;
+	int	ret, flush;
 	z_stream strm;
 	u_char	out[SYSLOG_BUF*3];
 #endif
@@ -443,28 +443,32 @@ syslog_worker(void *arg)
 			"1.0", host, msg, esc_buf, (long int)ts,
 			severity, fac2str(facility), "", 0);
 
-#ifdef DO_ZLIB
+#if 0
 		/* allocate deflate state */
 		strm.zalloc = Z_NULL;
 		strm.zfree = Z_NULL;
 		strm.opaque = Z_NULL;
-		deflateInit(&strm, Z_DEFAULT_COMPRESSION);
+		ret = deflateInit(&strm, Z_DEFAULT_COMPRESSION);
+		if (ret != Z_OK) {
+			printf("deflateInit error\n");
+			continue;
+		}
 
 		strm.avail_in = strlen((char *)in);
 		strm.next_in = in;
 		strm.avail_out = SYSLOG_BUF*3;
 		strm.next_out = out;
 		flush = Z_FINISH;
-		deflate(&strm, flush);
+		ret = deflate(&strm, flush);
 
 		(void)deflateEnd(&strm);
 
 		msgb.len = (SYSLOG_BUF*3) - strm.avail_out;
 		msgb.bytes = out;
-#else
+#endif
 		msgb.len = strlen((char *)in);
 		msgb.bytes = in;
-#endif
+
 		q = amqp_basic_publish(amqp.conn, 1,
 					amqp_cstring_bytes(cfg.amqp.ex_name),
 					amqp_cstring_bytes(cfg.amqp.host), 0, 0,
@@ -487,6 +491,11 @@ gelf_worker(void *arg)
 	int	r;
 	int	q;
 
+	int	ret = 0;
+	z_stream strm;
+	u_char	out[GELF_BUF*3];
+
+
 	//DEBUG("gelf worker thread #%d started\n", self->id);
 
 	if (amqp_link(&amqp) < 0) {
@@ -506,24 +515,45 @@ gelf_worker(void *arg)
 			printf("recvfrom error: %s\n", strerror(errno));
 			continue;
 		}
+
 		pthread_mutex_lock(&self->stat_mtx);
 		self->msg_count++;
 		pthread_mutex_unlock(&self->stat_mtx);
-#define	GELF_MAGIC(type) bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
-		if (!GELF_MAGIC(ZLIBD)) {
+		strm.zalloc = Z_NULL;
+		strm.zfree = Z_NULL;
+		strm.opaque = Z_NULL;
+		strm.avail_in = 0;
+		strm.next_in = Z_NULL;
+
+#define	GELF_MAGIC(type) !bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
+
+		if ( (GELF_MAGIC(ZLIBD)) || (GELF_MAGIC(GZIPD)) ) {
 			//DEBUG("Received ZLIB'd GELF message.\n");
-		} else if (!GELF_MAGIC(GZIPD)) {
+			ret = inflateInit2(&strm, 32+MAX_WBITS);
+		} else if (GELF_MAGIC(GZIPD)) {
 			//DEBUG("Received GZIP'd GELF message.\n");
-		} else if (!GELF_MAGIC(CHUNKD)) {
-			//DEBUG("Received CHUNKED GELF message.\n");
+			ret = inflateInit2(&strm, 32+MAX_WBITS);
+		} else if (GELF_MAGIC(CHUNKD)) {
+			DEBUG("Received CHUNKED GELF message.\n");
 		} else {
 			LOG("Unknown GELF type. Maybe RAW? Bailing out.");
 			continue;
 		}
 
-		msgb.len = r;
-		msgb.bytes = buf;
+		if (ret != Z_OK) {
+			printf("inflateInit error\n");
+			continue;
+		}
+
+		strm.avail_in = r;
+		strm.next_in = buf;
+		strm.avail_out = GELF_BUF*2;
+		strm.next_out = out;
+		ret = inflate(&strm, Z_FINISH);
+
+		msgb.len = (GELF_BUF*2) - strm.avail_out;			
+		msgb.bytes = out;
 
 		q = amqp_basic_publish(amqp.conn, 1,
 					amqp_cstring_bytes(cfg.amqp.ex_name),
@@ -531,6 +561,8 @@ gelf_worker(void *arg)
 					&amqp.props, msgb);
 		if (q < 0)
 			printf("failure publishing message to amqp\n");
+
+		(void)inflateEnd(&strm);
 
 	}
 }
