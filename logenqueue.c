@@ -191,7 +191,7 @@ void
 die(int sig)
 {
 	VERBOSE("Got shutdown request, waiting threads to finish\n");
-	dying = 1;		
+	dying = 1;
 }
 
 /*
@@ -330,7 +330,7 @@ dnscache_expire(void *arg)
 	int i;
 	int oldest_ts;
 	int now;
-	
+
 	oldest_ts = DNSCACHETTL;
 
 	for (;;) {
