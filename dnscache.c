@@ -57,9 +57,10 @@
 #include "config.h"
 
 /*
- * This function tries do to reverse DNS
+ * This function tries to get reverse DNS
  * on the given host and return the hostname,
  * or if it fails returns the IP.
+ * The result is cached.
  */
 void
 trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, struct dnscache *cache)
