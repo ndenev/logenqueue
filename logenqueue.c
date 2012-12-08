@@ -54,13 +54,11 @@
 
 #include "logenqueue.h"
 #include "config.h"
+#include "dnscache.h"
 
 #ifdef DO_ZLIB
 #include <zlib.h>
 #endif
-
-volatile int dying = 0;
-struct  config  cfg;
 
 #define STATS_TIMEOUT 5
 #define	ZLIBD	0
@@ -70,9 +68,41 @@ struct  config  cfg;
 #define SYSLOG_BUF 65535
 #define GELF_BUF 65535
 
+pthread_cond_t	stats_nap;
+volatile int dying = 0;
+
+static const char *f2s[] = {
+	"kernel", 
+	"user-level",
+	"mail", 
+	"system daemon",
+	"security/authorization", 
+	"syslogd",
+	"lpr",
+	"network news",
+	"uucp",
+	"clock",
+	"security/authorization",
+	"ftp",
+	"ntp",
+	"log audit",
+	"log alert",
+	"clock",
+	"local0",
+	"local1",
+	"local2",
+	"local3",
+	"local4",
+	"local5",
+	"local6",
+	"local7",
+	"GELF"
+};
+
 static const char *
 fac2str(int facility)
 {
+
 	if (facility > 0 && facility < 23)
 		return (f2s[facility]);
 	else
@@ -120,11 +150,21 @@ message_stats(void *arg)
 	int	i;
 	u_int	msg_count, msg_count_syslog, msg_count_gelf;
 	int	cache_hits, cache_missess, cache_full, cache_size;
+	pthread_mutex_t dummy;
+        struct timeval tv;
+        struct timespec ts;
+
+	pthread_mutex_init(&dummy, NULL);
+	pthread_cond_init(&stats_nap, NULL);
 
 	for (;;) {
-		sleep(STATS_TIMEOUT);
+		gettimeofday(&tv, NULL);
+		ts.tv_sec = tv.tv_sec + STATS_TIMEOUT;
+		ts.tv_nsec = 0;
+		pthread_mutex_lock(&dummy);
+		i = pthread_cond_timedwait(&stats_nap, &dummy, &ts);
+		pthread_mutex_unlock(&dummy);
 		if (dying) {
-			//DEBUG("shutdown message stats thread\n");
 			pthread_exit(NULL);
 		}
 		msg_count = msg_count_syslog = msg_count_gelf = 0;
@@ -192,6 +232,9 @@ die(int sig)
 {
 	VERBOSE("Got shutdown request, waiting threads to finish\n");
 	dying = 1;
+	shutdown(cfg.syslog.fd, SHUT_RD);
+	shutdown(cfg.gelf.fd, SHUT_RD); 
+	pthread_cond_signal(&stats_nap);
 }
 
 /*
@@ -244,122 +287,6 @@ parse_syslog_prio(char *msg, int *prio)
 	return (strchr(msg,'>')+1);
 }
 
-/*
- * This function tries do to reverse DNS
- * on the given host and return the hostname,
- * or if it fails returns the IP.
- */
-void
-trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, struct dnscache *cache)
-{
-	struct	hostent *hp = NULL;
-	void	*src = from->sa_data+2;
-
-	int i;
-	int oldest_ts;
-	int oldest_idx;
-	int now = time(NULL);
-
-	/* fast path, reader only when cache warm */
-	for (i = 0; i < DNSCACHESIZE; i++) {
-		pthread_rwlock_rdlock(cache->lock);
-		if (cache->entry[i].from == *(u_int32_t *)src) {
-			pthread_mutex_lock(&self->stat_mtx);
-			cache->hit++;
-			pthread_mutex_unlock(&self->stat_mtx);
-			strncpy(host, cache->entry[i].host, _POSIX_HOST_NAME_MAX);
-			cache->entry[i].ts = now;
-			pthread_rwlock_unlock(cache->lock);
-			return;
-		}
-		pthread_rwlock_unlock(cache->lock);
-	}
-
-	/* fall back to dns query and cache update */
-	pthread_rwlock_wrlock(cache->lock);
-
-	/* retry the query from cache, in case other thread won the race and cached it */
-	for (i = 0; i < DNSCACHESIZE; i++) {
-		if (cache->entry[i].from == *(u_int32_t *)src) {
-			/* we lost the race but some other thread did the dirty work */
-			pthread_mutex_lock(&self->stat_mtx);
-			cache->hit++;
-			pthread_mutex_unlock(&self->stat_mtx);
-			strncpy(host, cache->entry[i].host, _POSIX_HOST_NAME_MAX);
-			cache->entry[i].ts = now;
-			pthread_rwlock_unlock(cache->lock);
-			return;
-		}
-	}
-
-	hp = gethostbyaddr((const void *)src, sizeof(struct in_addr), AF_INET);
-	if (hp)
-		strncpy(host, hp->h_name, _POSIX_HOST_NAME_MAX);
-	else
-		inet_ntop(from->sa_family, src, host, _POSIX_HOST_NAME_MAX);
-
-	oldest_ts = now;
-	oldest_idx = DNSCACHESIZE+1;
-
-	for (i = 0; i < DNSCACHESIZE; i++) {
-		if (cache->entry[i].ts < oldest_ts) {
-			oldest_ts = cache->entry[i].ts;
-			oldest_idx = i;
-		}
-	}
-
-	cache->miss++;
-
-	if (oldest_idx == DNSCACHESIZE+1 || cache->size == DNSCACHESIZE) {
-		cache->full++;
-	} else {
-		if (cache->entry[oldest_idx].ts == 0)
-			cache->size++;	
-
-		cache->entry[oldest_idx].from = *(u_int32_t *)src;
-		strncpy(cache->entry[oldest_idx].host, host, _POSIX_HOST_NAME_MAX);
-		cache->entry[oldest_idx].ts = now;
-	}
-	pthread_rwlock_unlock(cache->lock);
-}
-
-void
-dnscache_expire(void *arg)
-{
-	struct dnscache *cache = (struct dnscache *)arg;
-	int i;
-	int oldest_ts;
-	int now;
-
-	oldest_ts = DNSCACHETTL;
-
-	for (;;) {
-		//DEBUG("dnscache cleaner thread sleeping for %d secs\n", oldest_ts);
-		sleep(oldest_ts);
-		if (dying) {
-			//DEBUG("shutdown dnscache cleaner thread");
-			pthread_exit(NULL);
-		}
-		pthread_rwlock_wrlock(cache->lock);
-		oldest_ts = now = time(NULL);
-		for (i = 0; i < DNSCACHESIZE; i++) {
-			/* purge old entry */
-			if (cache->entry[i].ts && cache->entry[i].ts < now - DNSCACHETTL) {
-				//DEBUG("purging entry: %s\n", cache->entry[i].host);
-				cache->entry[i].ts = 0;
-				cache->entry[i].from = 0;
-				cache->entry[i].host[0] = '\0';
-				cache->size--;
-			}
-			/* remember oldest entry */
-			if (cache->entry[i].ts && cache->entry[i].ts < oldest_ts) {
-				oldest_ts = cache->entry[i].ts;
-			}
-		}
-		oldest_ts = now - oldest_ts;
-		pthread_rwlock_unlock(cache->lock);
-	}
-}
 void
 syslog_worker(void *arg)
 {
@@ -390,11 +317,10 @@ syslog_worker(void *arg)
 	self->msg_count = 0;
 	self->old_msg_count = 0;
 	for (;;) {
+		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
 		if (dying) {
-			//DEBUG("shutdown syslog worker #%d\n", self->id);
 			pthread_exit(NULL);
 		}
-		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
 		if (r < 0) {
 			printf("recvfrom error: %s\n", strerror(errno));
 			continue;
@@ -501,11 +427,10 @@ gelf_worker(void *arg)
 	self->msg_count = 0;
 	self->old_msg_count = 0;
 	for (;;) {
+		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
 		if (dying) {
-			//DEBUG("shutdown gelf worker #%d\n", self->id);
 			pthread_exit(NULL);
 		}
-		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
 		if (r < 0) {
 			printf("recvfrom error: %s\n", strerror(errno));
 			continue;

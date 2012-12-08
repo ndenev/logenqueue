@@ -38,7 +38,10 @@
 #endif
 
 char    config_file[MAXPATHLEN] = CONFIG_FILE;
-extern	struct config cfg;
+struct config cfg;
+
+int     debug = 0;
+int     verbose = 0;
 
 int parse_config()
 {
