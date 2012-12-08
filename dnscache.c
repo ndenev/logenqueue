@@ -154,8 +154,10 @@ dnscache_expire(void *arg)
 		pthread_rwlock_wrlock(cache->lock);
 		oldest_ts = now = time(NULL);
 		for (i = 0; i < DNSCACHESIZE; i++) {
+			if (!cache->entry[i].ts)
+				continue;
 			/* purge old entry */
-			if (cache->entry[i].ts && cache->entry[i].ts < now - DNSCACHETTL) {
+			if (cache->entry[i].ts < now - DNSCACHETTL) {
 				//DEBUG("purging entry: %s\n", cache->entry[i].host);
 				cache->entry[i].ts = 0;
 				cache->entry[i].from = 0;
@@ -163,7 +165,7 @@ dnscache_expire(void *arg)
 				cache->size--;
 			}
 			/* remember oldest entry */
-			if (cache->entry[i].ts && cache->entry[i].ts < oldest_ts) {
+			if (cache->entry[i].ts < oldest_ts) {
 				oldest_ts = cache->entry[i].ts;
 			}
 		}
