@@ -53,16 +53,16 @@ struct dnscache {
 
 struct syslog_thr_dat {
 	int     id;
-	u_int	msg_count;
-	u_int	old_msg_count;
+	u_int	mc;
+	u_int	old_mc;
 	pthread_mutex_t stat_mtx;
 	struct dnscache *cache;
 };
 
 struct gelf_thr_dat {
 	int     id;
-	u_int	msg_count;
-	u_int	old_msg_count;
+	u_int	mc;
+	u_int	old_mc;
 	pthread_mutex_t stat_mtx;
 };
 

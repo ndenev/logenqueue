@@ -73,11 +73,11 @@ pthread_cond_t	stats_nap;
 volatile int dying = 0;
 
 static const char *f2s[] = {
-	"kernel", 
+	"kernel",
 	"user-level",
-	"mail", 
+	"mail",
 	"system daemon",
-	"security/authorization", 
+	"security/authorization",
 	"syslogd",
 	"lpr",
 	"network news",
@@ -97,7 +97,8 @@ static const char *f2s[] = {
 	"local5",
 	"local6",
 	"local7",
-	"GELF"
+	"GELF",
+	NULL
 };
 
 static const char *
@@ -115,9 +116,11 @@ amqp_link(struct amqp_state_t *amqp)
 {
 	amqp_rpc_reply_t r;
 
-	amqp->props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
-	amqp->props.delivery_mode = 2; /* persistent delivery mode */
-	amqp->props.content_type = amqp_cstring_bytes("application/octet-stream");
+	amqp->props._flags =
+		AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+	amqp->props.delivery_mode = 2;
+	amqp->props.content_type =
+		amqp_cstring_bytes("application/octet-stream");
 
 	amqp->conn = amqp_new_connection();
 	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
@@ -149,8 +152,10 @@ message_stats(void *arg)
 	struct	syslog_thr_dat *stp;
 	struct	gelf_thr_dat *gtp;
 	int	i;
-	u_int	msg_count, msg_count_syslog, msg_count_gelf;
-	int	cache_hits, cache_missess, cache_full, cache_size;
+	u_int	mc;		/* message count */
+	u_int	mcs;		/* message count syslog */
+	u_int	mcg;		/* message count gelf */
+	int	cache_hits, cache_miss, cache_full, cache_size;
 	pthread_mutex_t dummy;
         struct timeval tv;
         struct timespec ts;
@@ -168,13 +173,13 @@ message_stats(void *arg)
 		if (dying) {
 			pthread_exit(NULL);
 		}
-		msg_count = msg_count_syslog = msg_count_gelf = 0;
-		cache_hits = cache_missess = cache_full = cache_size = 0;
+		mc = mcs = mcg = 0;
+		cache_hits = cache_miss = cache_full = cache_size = 0;
 
 		/* get dns cache stats */
 		pthread_rwlock_wrlock(cache->lock);
 		cache_hits	= cache->hit;
-		cache_missess	= cache->miss;
+		cache_miss	= cache->miss;
 		cache_full	= cache->full;
 		cache_size	= cache->size;
 		cache->hit = 0;
@@ -183,40 +188,40 @@ message_stats(void *arg)
 
 		DEBUG("dns cache size : %d/%d\n", cache_size, DNSCACHESIZE);
 		DEBUG("dns cache hit  : %d/sec\n", cache_hits / STATS_TIMEOUT);
-		DEBUG("dns cache miss : %d/sec\n", cache_missess / STATS_TIMEOUT);
+		DEBUG("dns cache miss : %d/sec\n", cache_miss / STATS_TIMEOUT);
 		DEBUG("dns cache full : %d\n", cache_full);
 
 		for (i = 0; i < cfg.syslog.workers; i++) {
 			stp = &workers_data->syslog[i];
 			pthread_mutex_lock(&stp->stat_mtx);
 			/* get message count stats and detect wraps */
-			if (stp->msg_count >= stp->old_msg_count) {
-				msg_count_syslog += stp->msg_count - stp->old_msg_count;
-				stp->old_msg_count = stp->msg_count;
+			if (stp->mc >= stp->old_mc) {
+				mcs += stp->mc - stp->old_mc;
+				stp->old_mc = stp->mc;
 			} else {
-				msg_count_syslog += (UINT_MAX - stp->old_msg_count) + stp->msg_count;
+				mcs += (UINT_MAX - stp->old_mc) + stp->mc;
 			}
 			pthread_mutex_unlock(&stp->stat_mtx);
 		}
 		for (i = 0; i < cfg.gelf.workers; i++) {
 			gtp = &workers_data->gelf[i];
 			pthread_mutex_lock(&gtp->stat_mtx);
-			if (gtp->msg_count >= gtp->old_msg_count) {
-				msg_count_gelf += gtp->msg_count - gtp->old_msg_count;
-				gtp->old_msg_count = gtp->msg_count;
+			if (gtp->mc >= gtp->old_mc) {
+				mcg += gtp->mc - gtp->old_mc;
+				gtp->old_mc = gtp->mc;
 			} else {
-				msg_count_gelf += (UINT_MAX - gtp->old_msg_count) + gtp->msg_count;
+				mcg += (UINT_MAX - gtp->old_mc) + gtp->mc;
 			}
 			pthread_mutex_unlock(&gtp->stat_mtx);
 		}
-		msg_count_syslog = msg_count_syslog / STATS_TIMEOUT;
-		msg_count_gelf = msg_count_gelf / STATS_TIMEOUT;
-		msg_count = msg_count_syslog + msg_count_gelf;
-		VERBOSE("msg rate total  : %d msg/sec\n", msg_count);
-		VERBOSE("msg rate syslog : %d msg/sec\n", msg_count_syslog);
-		VERBOSE("msg rate gelf   : %d msg/sec\n", msg_count_gelf);
+		mcs = mcs / STATS_TIMEOUT;
+		mcg = mcg / STATS_TIMEOUT;
+		mc = mcs + mcg;
+		VERBOSE("msg rate total  : %d msg/sec\n", mc);
+		VERBOSE("msg rate syslog : %d msg/sec\n", mcs);
+		VERBOSE("msg rate gelf   : %d msg/sec\n", mcg);
 #if __FreeBSD__ || __linux__
-		setproctitle("%d msg/sec", msg_count);
+		setproctitle("%d msg/sec", mc);
 #endif
 		VERBOSE("\n");
 	};
@@ -234,7 +239,7 @@ die(int sig)
 	VERBOSE("Got shutdown request, waiting threads to finish\n");
 	dying = 1;
 	shutdown(cfg.syslog.fd, SHUT_RD);
-	shutdown(cfg.gelf.fd, SHUT_RD); 
+	shutdown(cfg.gelf.fd, SHUT_RD);
 	pthread_cond_signal(&stats_nap);
 }
 
@@ -320,10 +325,11 @@ syslog_worker(void *arg)
 		return;
 	}
 
-	self->msg_count = 0;
-	self->old_msg_count = 0;
+	self->mc = 0;
+	self->old_mc = 0;
 	for (;;) {
-		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf), MSG_WAITALL, &from, &ip_len);
+		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf),
+				MSG_WAITALL, &from, &ip_len);
 		if (dying) {
 			pthread_exit(NULL);
 		}
@@ -333,7 +339,7 @@ syslog_worker(void *arg)
 		}
 		buf[r] = '\0';
 		pthread_mutex_lock(&self->stat_mtx);
-		self->msg_count++;
+		self->mc++;
 		pthread_mutex_unlock(&self->stat_mtx);
 
 		trytogetrdns(self, &from, host, self->cache);
@@ -421,8 +427,8 @@ gelf_worker(void *arg)
 		return;
 	}
 
-	self->msg_count = 0;
-	self->old_msg_count = 0;
+	self->mc = 0;
+	self->old_mc = 0;
 	for (;;) {
 		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
 		if (dying) {
@@ -433,7 +439,7 @@ gelf_worker(void *arg)
 			continue;
 		}
 		pthread_mutex_lock(&self->stat_mtx);
-		self->msg_count++;
+		self->mc++;
 		pthread_mutex_unlock(&self->stat_mtx);
 #define	GELF_MAGIC(type) bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
@@ -541,7 +547,7 @@ main(int argc, char **argv)
 			exit(-1);
 		}
 		if (pid > 0) {
-			VERBOSE("logenqueue started and going into background\n");
+			VERBOSE("logenqueue started...\n");
 			_Exit(0);
 		}
 		setsid();
@@ -572,16 +578,20 @@ main(int argc, char **argv)
                 return(-1);
         }
 
+	/* allocate thread and thread storage structures */
 	syslog_workers = calloc(cfg.syslog.workers, sizeof(pthread_t));
 	gelf_workers = calloc(cfg.gelf.workers, sizeof(pthread_t));
 
-	workers_data.syslog = calloc(cfg.syslog.workers, sizeof(struct syslog_thr_dat));
-	workers_data.gelf  = calloc(cfg.gelf.workers, sizeof(struct gelf_thr_dat));
+	workers_data.syslog = calloc(cfg.syslog.workers,
+					sizeof(struct syslog_thr_dat));
+	workers_data.gelf  = calloc(cfg.gelf.workers,
+					sizeof(struct gelf_thr_dat));
 
 	pthread_rwlock_init(&dnscache_lock, NULL);
 	memset(&dnscache, 0, sizeof(dnscache));
 	dnscache.lock = &dnscache_lock;
 
+	/* create syslog workers */
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		stp = &workers_data.syslog[i];
 		stp->id = i;
@@ -595,6 +605,7 @@ main(int argc, char **argv)
 #endif
 	}
 
+	/* create gelf workers */
 	for (i = 0; i < cfg.gelf.workers; i++) {
 		gtp = &workers_data.gelf[i];
 		gtp->id = i;
@@ -607,24 +618,32 @@ main(int argc, char **argv)
 #endif
 	}
 
-	pthread_create(&stats_thread, NULL, (void *)&message_stats, &workers_data);
+	/* create statistics thread */
+	pthread_create(&stats_thread, NULL,
+			(void *)&message_stats, &workers_data);
 	snprintf(tname, sizeof(tname), "stats_thread[]");
 #if __FreeBSD__
 	pthread_set_name_np(stats_thread, tname);
 #endif
 
-	pthread_create(&dnscache_cleaner, NULL, (void *)&dnscache_expire, &dnscache);
+	/* create dnscache purge thread */
+	pthread_create(&dnscache_cleaner, NULL,
+			(void *)&dnscache_expire, &dnscache);
+
 	snprintf(tname, sizeof(tname), "dns_cleaner[]");
 #if __FreeBSD__
 	pthread_set_name_np(dnscache_cleaner, tname);
 #endif
 
+	/* wait for syslog worker threads */
 	for (i = 0; i < cfg.syslog.workers; i++)
 		pthread_join(syslog_workers[i], NULL);
 
+	/* wait for gelf worker threads */
 	for (i = 0; i < cfg.gelf.workers; i++)
 		pthread_join(gelf_workers[i], NULL);
 
+	/* wait for stats and dnscache cleaner threads to finish */
 	pthread_join(stats_thread, NULL);
 	pthread_join(dnscache_cleaner, NULL);
 
