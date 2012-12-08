@@ -34,12 +34,6 @@
 #define DEBUG(...)      if (debug>0) printf(__VA_ARGS__)
 #define VERBOSE(...)    if (verbose>0) printf(__VA_ARGS__)
 
-extern int debug;
-extern int verbose;
-
-extern volatile int dying;
-extern struct  config  cfg;
-
 #define DNSCACHESIZE 4096
 #define DNSCACHETTL 300
 struct dnscache_entry {
@@ -59,16 +53,16 @@ struct dnscache {
 
 struct syslog_thr_dat {
 	int     id;
-	u_int	msg_count;
-	u_int	old_msg_count;
+	u_int	mc;
+	u_int	old_mc;
 	pthread_mutex_t stat_mtx;
 	struct dnscache *cache;
 };
 
 struct gelf_thr_dat {
 	int     id;
-	u_int	msg_count;
-	u_int	old_msg_count;
+	u_int	mc;
+	u_int	old_mc;
 	pthread_mutex_t stat_mtx;
 };
 
