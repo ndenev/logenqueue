@@ -34,12 +34,6 @@
 #define DEBUG(...)      if (debug>0) printf(__VA_ARGS__)
 #define VERBOSE(...)    if (verbose>0) printf(__VA_ARGS__)
 
-extern int debug;
-extern int verbose;
-
-extern volatile int dying;
-extern struct  config  cfg;
-
 #define DNSCACHESIZE 4096
 #define DNSCACHETTL 300
 struct dnscache_entry {

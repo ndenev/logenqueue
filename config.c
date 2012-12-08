@@ -31,6 +31,7 @@
 #include <string.h>
 #include <sys/param.h>
 
+#include "common.h"
 #include "config.h"
 
 #ifndef CONFIG_FILE
