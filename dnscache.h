@@ -28,7 +28,7 @@
 #ifndef DNSCACHE_H_INCLUDED
 #define DNSCACHE_H_INCLUDED
 
-void trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, struct dnscache *cache);
+void trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struct dnscache *cache);
 void dnscache_expire(void *arg);
 
 #endif

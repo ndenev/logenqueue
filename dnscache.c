@@ -63,7 +63,7 @@
  * The result is cached.
  */
 void
-trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, struct dnscache *cache)
+trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struct dnscache *cache)
 {
 	struct	hostent *hp = NULL;
 	void	*src = from->sa_data+2;
@@ -77,9 +77,9 @@ trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, str
 	for (i = 0; i < DNSCACHESIZE; i++) {
 		pthread_rwlock_rdlock(cache->lock);
 		if (cache->entry[i].from == *(u_int32_t *)src) {
-			pthread_mutex_lock(&self->stat_mtx);
+			pthread_mutex_lock(stat_mtx);
 			cache->hit++;
-			pthread_mutex_unlock(&self->stat_mtx);
+			pthread_mutex_unlock(stat_mtx);
 			strncpy(host, cache->entry[i].host, _POSIX_HOST_NAME_MAX);
 			cache->entry[i].ts = now;
 			pthread_rwlock_unlock(cache->lock);
@@ -95,9 +95,9 @@ trytogetrdns(struct syslog_thr_dat *self, struct sockaddr *from, char *host, str
 	for (i = 0; i < DNSCACHESIZE; i++) {
 		if (cache->entry[i].from == *(u_int32_t *)src) {
 			/* we lost the race but some other thread did the dirty work */
-			pthread_mutex_lock(&self->stat_mtx);
+			pthread_mutex_lock(stat_mtx);
 			cache->hit++;
-			pthread_mutex_unlock(&self->stat_mtx);
+			pthread_mutex_unlock(stat_mtx);
 			strncpy(host, cache->entry[i].host, _POSIX_HOST_NAME_MAX);
 			cache->entry[i].ts = now;
 			pthread_rwlock_unlock(cache->lock);

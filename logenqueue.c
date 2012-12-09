@@ -342,7 +342,7 @@ syslog_worker(void *arg)
 		self->mc++;
 		pthread_mutex_unlock(&self->stat_mtx);
 
-		trytogetrdns(self, &from, host, self->cache);
+		trytogetrdns(&self->stat_mtx, &from, host, self->cache);
 
 		json_escape((char *)esc_buf, (char *)buf, sizeof(esc_buf));
 
