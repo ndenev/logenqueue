@@ -125,20 +125,20 @@ amqp_link(struct amqp_state_t *amqp)
 	amqp->conn = amqp_new_connection();
 	cfg.amqp.fd = amqp_open_socket(cfg.amqp.host, cfg.amqp.port);
 	if (cfg.amqp.fd < 0) {
-		printf("unable to open amqp socket!\n");
+		LOG("unable to open amqp socket!\n");
 		return(-1);
 	}
 	amqp_set_sockfd(amqp->conn, cfg.amqp.fd);
 	r = amqp_login(amqp->conn, cfg.amqp.vhost, 0, 131072, 0,
 		AMQP_SASL_METHOD_PLAIN, cfg.amqp.user, cfg.amqp.pass);
 	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
-		printf("problem logging in amqp broker\n");
+		LOG("problem logging in amqp broker\n");
 		return(-1);
 	}
 	amqp_channel_open(amqp->conn, 1);
 	r = amqp_get_rpc_reply(amqp->conn);
 	if (r.reply_type != AMQP_RESPONSE_NORMAL) {
-		printf("problem opening amqp channel\n");
+		LOG("problem opening amqp channel\n");
 		return(-1);
 	}
 	return(0);
@@ -230,7 +230,7 @@ message_stats(void *arg)
 void
 reload(int sig)
 {
-	printf("Here goes code to reload the config\n");
+	LOG("Here goes code to reload the config\n");
 }
 
 void
@@ -316,7 +316,7 @@ syslog_worker(void *arg)
 	//DEBUG("syslog worker thread #%d started\n", self->id);
 
 	if (amqp_link(&amqp) < 0) {
-		printf("can't connect to amqp from syslog thr #%d\n", self->id);
+		LOG("can't connect to amqp from syslog thr #%d\n", self->id);
 		return;
 	}
 
@@ -329,7 +329,7 @@ syslog_worker(void *arg)
 			pthread_exit(NULL);
 		}
 		if (r < 0) {
-			printf("recvfrom error: %s\n", strerror(errno));
+			LOG("recvfrom error: %s\n", strerror(errno));
 			continue;
 		}
 		buf[r] = '\0';
@@ -402,7 +402,7 @@ syslog_worker(void *arg)
 					amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 					&amqp.props, msgb);
 		if (q < 0)
-			printf("failure publishing message to amqp\n");
+			LOG("failure publishing message to amqp\n");
 
 	}
 
@@ -427,7 +427,7 @@ gelf_worker(void *arg)
 	//DEBUG("gelf worker thread #%d started\n", self->id);
 
 	if (amqp_link(&amqp) < 0) {
-		printf("can't connect to amqp from gelf thr #%d\n", self->id);
+		LOG("can't connect to amqp from gelf thr #%d\n", self->id);
 		return;
 	}
 
@@ -439,7 +439,7 @@ gelf_worker(void *arg)
 			pthread_exit(NULL);
 		}
 		if (r < 0) {
-			printf("recvfrom error: %s\n", strerror(errno));
+			LOG("recvfrom error: %s\n", strerror(errno));
 			continue;
 		}
 
@@ -462,7 +462,8 @@ gelf_worker(void *arg)
 			//DEBUG("Received GZIP'd GELF message.\n");
 			ret = inflateInit2(&strm, 32+MAX_WBITS);
 		} else if (GELF_MAGIC(CHUNKD)) {
-			DEBUG("Received CHUNKED GELF message.\n");
+			LOG("Received CHUNKED GELF message. It's not supported currently!\n");
+			continue;
 		} else {
 			LOG("Unknown GELF type. Maybe RAW? Bailing out.");
 			continue;
@@ -487,7 +488,7 @@ gelf_worker(void *arg)
 					amqp_cstring_bytes(cfg.amqp.host), 0, 0,
 					&amqp.props, msgb);
 		if (q < 0)
-			printf("failure publishing message to amqp\n");
+			LOG("failure publishing message to amqp\n");
 
 		(void)inflateEnd(&strm);
 
@@ -503,7 +504,7 @@ udp_listen(char *bindaddr, u_int port)
 	udpsock_fd = socket(AF_INET, SOCK_DGRAM, 0);
 
 	if (udpsock_fd == -1) {
-		printf("error creating socket!: %s\n", strerror(errno));
+		LOG("error creating socket!: %s\n", strerror(errno));
 		return(-1);
 	}
 
@@ -516,7 +517,7 @@ udp_listen(char *bindaddr, u_int port)
 	r = setsockopt(udpsock_fd, SOL_SOCKET, SO_RCVBUF,
 		(const void *)&noptval, sizeof(noptval));
 	if (r == -1) {
-		printf("error calling setsockopt: %s\n", strerror(errno));
+		LOG("error calling setsockopt: %s\n", strerror(errno));
 		return(-1);
 	}
 
@@ -524,14 +525,14 @@ udp_listen(char *bindaddr, u_int port)
 	r = setsockopt(udpsock_fd, SOL_SOCKET, SO_REUSEADDR,
 		(const void *)&noptval, sizeof(noptval));
 	if (r == -1) {
-		printf("error calling setsockopt: %s\n", strerror(errno));
+		LOG("error calling setsockopt: %s\n", strerror(errno));
 		return(-1);
 	}
 
 	r = bind(udpsock_fd, (struct sockaddr *)&staddr, sizeof(staddr));
 	if (r != 0) {
-		printf("bind: %s\n", bindaddr);
-		printf("error binding to socket: %s\n", strerror(errno));
+		LOG("bind: %s\n", bindaddr);
+		LOG("error binding to socket: %s\n", strerror(errno));
 		return(-1);
 	}
 
@@ -561,7 +562,7 @@ main(int argc, char **argv)
 	signal(SIGTERM, die);
 
 	if (parse_opts(&argc, &argv) < 0) {
-		printf("problem parsing command line arguments/options\n");
+		LOG("problem parsing command line arguments/options\n");
 		exit(-1);
 	}
 
@@ -570,7 +571,7 @@ main(int argc, char **argv)
 	if (!debug) {
 		pid = fork();
 		if (pid < 0) {
-			printf("unable to fork: %s\n", strerror(errno));
+			LOG("unable to fork: %s\n", strerror(errno));
 			exit(-1);
 		}
 		if (pid > 0) {
@@ -586,12 +587,12 @@ main(int argc, char **argv)
 	cfg.syslog.fd = udp_listen(cfg.syslog.bind, cfg.syslog.port);
 	cfg.gelf.fd = udp_listen(cfg.gelf.bind, cfg.gelf.port);
 	if (cfg.syslog.fd == -1 || cfg.gelf.fd == -1) {
-		printf("problem listening\n");
+		LOG("problem listening\n");
 		return(-1);
 	}
 
 	if (amqp_link(&amqp) < 0) {
-		printf("problem with amqp connection!\n");
+		LOG("problem with amqp connection!\n");
 		return(-1);
 	}
 
@@ -601,7 +602,7 @@ main(int argc, char **argv)
 				0, 0, amqp_empty_table);
         r = amqp_get_rpc_reply(amqp.conn);
         if (r.reply_type != AMQP_RESPONSE_NORMAL) {
-                printf("problem declaring amqp exchange\n");
+                LOG("problem declaring amqp exchange\n");
                 return(-1);
         }
 
