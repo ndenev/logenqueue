@@ -29,7 +29,7 @@
 #define COMMON_H_INCLUDED
 
 /* global vars */
-extern int debug;
+extern int dontfork;
 extern int verbose;
 extern int stats;
 extern volatile int dying;

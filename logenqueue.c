@@ -575,7 +575,7 @@ main(int argc, char **argv)
 
 	parse_config();
 
-	if (!debug) {
+	if (!dontfork) {
 		pid = fork();
 		if (pid < 0) {
 			LOG("unable to fork: %s\n", strerror(errno));
