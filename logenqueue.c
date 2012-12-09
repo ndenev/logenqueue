@@ -415,6 +415,9 @@ gelf_worker(void *arg)
 	struct gelf_thr_dat *self = (struct gelf_thr_dat *)arg;
 
 	struct  amqp_state_t amqp;
+	struct  sockaddr from;
+	u_int   ip_len;
+	char    host[_POSIX_HOST_NAME_MAX+1];
 	amqp_bytes_t msgb;
 	u_char	buf[GELF_BUF];
 	int	r;
@@ -430,7 +433,8 @@ gelf_worker(void *arg)
 	self->mc = 0;
 	self->old_mc = 0;
 	for (;;) {
-		r = recvfrom(cfg.gelf.fd, &buf, sizeof(buf), 0, NULL, NULL);
+		r = recvfrom(cfg.gelf.fd, buf, sizeof(buf),
+				MSG_WAITALL, &from, &ip_len);
 		if (dying) {
 			pthread_exit(NULL);
 		}
@@ -448,10 +452,14 @@ gelf_worker(void *arg)
 		} else if (!GELF_MAGIC(GZIPD)) {
 			//DEBUG("Received GZIP'd GELF message.\n");
 		} else if (!GELF_MAGIC(CHUNKD)) {
-			LOG("Received CHUNKED GELF message. It's not supported currently!\n");
+			trytogetrdns(&self->stat_mtx, &from, host, self->cache);
+			LOG("Received CHUNKED GELF message from (%s). It's not supported currently!\n",
+				host);
 			continue;
 		} else {
-			LOG("Unknown GELF type. Maybe RAW? Bailing out.");
+			trytogetrdns(&self->stat_mtx, &from, host, self->cache);
+			LOG("Received message with unknown GELF type from (%s). Maybe RAW? Bailing out.\n",
+				host);
 			continue;
 		}
 
@@ -610,6 +618,7 @@ main(int argc, char **argv)
 	for (i = 0; i < cfg.gelf.workers; i++) {
 		gtp = &workers_data.gelf[i];
 		gtp->id = i;
+		gtp->cache = &dnscache;
 		pthread_mutex_init(&gtp->stat_mtx, NULL);
 		pthread_create(&gelf_workers[i], NULL,
 				(void *)&gelf_worker, gtp);

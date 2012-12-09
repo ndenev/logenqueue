@@ -64,6 +64,7 @@ struct gelf_thr_dat {
 	u_int	mc;
 	u_int	old_mc;
 	pthread_mutex_t stat_mtx;
+	struct dnscache *cache;
 };
 
 struct thr_dat {
