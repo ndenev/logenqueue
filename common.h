@@ -31,6 +31,7 @@
 /* global vars */
 extern int debug;
 extern int verbose;
+extern int stats;
 extern volatile int dying;
 extern struct  config  cfg;
 

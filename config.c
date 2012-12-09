@@ -43,6 +43,7 @@ struct config cfg;
 
 int     debug = 0;
 int     verbose = 0;
+int	stats = 0;
 
 int parse_config()
 {
@@ -107,8 +108,9 @@ usage()
 {
 	printf("logenqueue [-dv] [-c /path/to/config.file]\n");
 	printf("	-c 	--conf		specify config file to use\n");
-	printf("	-d	--debug		enable debug mode\n");
+	printf("	-d	--debug		enable debug mode and stay in foreground\n");
 	printf("	-h	--help		this help screen\n");
+	printf("	-s	--stats		print msg and dnscache stats when in debug mode\n");
 	printf("	-v	--verbose	enable verbose mode\n");
 	exit(0);
 }
@@ -122,6 +124,7 @@ parse_opts(int *argc, char ***argv)
 		{ "conf",	required_argument,	NULL,	'c' },
 		{ "debug",	no_argument,		NULL,	'd' },
 		{ "help",	no_argument,		NULL,	'h' },
+		{ "stats",	no_argument,		NULL,	's' },
 		{ "verbose",	no_argument,		NULL,	'v' },
 		{ NULL,		0,			NULL,	0 },
 	};
@@ -135,6 +138,9 @@ parse_opts(int *argc, char ***argv)
                         case 'd':
                                 debug++;
                                 break;
+			case 's':
+				stats++;
+				break;
                         case 'v':
                                 verbose++;
                                 break;

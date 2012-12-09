@@ -173,6 +173,7 @@ message_stats(void *arg)
 		if (dying) {
 			pthread_exit(NULL);
 		}
+
 		mc = mcs = mcg = 0;
 		cache_hits = cache_miss = cache_full = cache_size = 0;
 
@@ -186,10 +187,12 @@ message_stats(void *arg)
 		cache->miss = 0;
 		pthread_rwlock_unlock(cache->lock);
 
-		DEBUG("dns cache size : %d/%d\n", cache_size, DNSCACHESIZE);
-		DEBUG("dns cache hit  : %d/sec\n", cache_hits / STATS_TIMEOUT);
-		DEBUG("dns cache miss : %d/sec\n", cache_miss / STATS_TIMEOUT);
-		DEBUG("dns cache full : %d\n", cache_full);
+		if (stats) {
+			DEBUG("dns cache size : %d/%d\n", cache_size, DNSCACHESIZE);
+			DEBUG("dns cache hit  : %d/sec\n", cache_hits / STATS_TIMEOUT);
+			DEBUG("dns cache miss : %d/sec\n", cache_miss / STATS_TIMEOUT);
+			DEBUG("dns cache full : %d\n", cache_full);
+		}
 
 		for (i = 0; i < cfg.syslog.workers; i++) {
 			stp = &workers_data->syslog[i];
@@ -217,13 +220,17 @@ message_stats(void *arg)
 		mcs = mcs / STATS_TIMEOUT;
 		mcg = mcg / STATS_TIMEOUT;
 		mc = mcs + mcg;
+
+		if (stats) {
 		VERBOSE("msg rate total  : %d msg/sec\n", mc);
 		VERBOSE("msg rate syslog : %d msg/sec\n", mcs);
 		VERBOSE("msg rate gelf   : %d msg/sec\n", mcg);
+		VERBOSE("\n");
+		}
+
 #if __FreeBSD__ || __linux__
 		setproctitle("%d msg/sec", mc);
 #endif
-		VERBOSE("\n");
 	};
 }
 
@@ -453,8 +460,27 @@ gelf_worker(void *arg)
 			//DEBUG("Received GZIP'd GELF message.\n");
 		} else if (!GELF_MAGIC(CHUNKD)) {
 			trytogetrdns(&self->stat_mtx, &from, host, self->cache);
+			u_char *msg_ptr;	
+			u_int64_t *msg_id;
+			u_int8_t *msg_seq_num;
+			u_int8_t *msg_chunks;
+			/* skip over chunked gelf magic */
+			msg_ptr = buf+2;
+			msg_id = (u_int64_t *)msg_ptr;
+			msg_ptr = buf+10;
+			msg_seq_num = (u_int8_t *)msg_ptr;
+			msg_ptr = buf+11;
+			msg_chunks = (u_int8_t *)msg_ptr;
 			LOG("Received CHUNKED GELF message from (%s). It's not supported currently!\n",
 				host);
+			LOG("chunked_gelf: size: %d msg_id:%lu msg_seq_num:%u msg_chunks:%u\n",
+				r, msg_id, msg_seq_num, msg_chunks);
+			int i;
+			for (i=0; i<r-1; i++) {
+				if (buf[i] == '\0')
+					buf[i] = '_';
+			}
+			LOG("msg: %s\n", buf);
 			continue;
 		} else {
 			trytogetrdns(&self->stat_mtx, &from, host, self->cache);
