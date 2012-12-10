@@ -25,36 +25,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef LOGENQUEUE_H_INCLUDED
-#define LOGENQUEUE_H_INCLUDED
+#ifndef GELF_H_INCLUDED
+#define GELF_H_INCLUDED
 
-#include <limits.h>
+void gelf_worker(void *arg);
 
-struct syslog_thr_dat {
-	int     id;
-	u_int	mc;
-	u_int	old_mc;
-	pthread_mutex_t stat_mtx;
-	struct dnscache *cache;
-};
-
-struct gelf_thr_dat {
-	int     id;
-	u_int	mc;
-	u_int	old_mc;
-	pthread_mutex_t stat_mtx;
-	struct dnscache *cache;
-};
-
-struct thr_dat {
-	struct syslog_thr_dat *syslog;
-	struct gelf_thr_dat *gelf;
-};
-
-static const char gelf_magic[3][2] = {
-	{ 0x78, 0x9c },
-	{ 0x1f, 0x8b },
-	{ 0x1e, 0x0f },
-};
 
 #endif

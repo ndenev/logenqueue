@@ -53,8 +53,8 @@
 #include <amqp_framing.h>
 
 #include "common.h"
-#include "logenqueue.h"
 #include "config.h"
+#include "dnscache.h"
 
 /*
  * This function tries to get reverse DNS

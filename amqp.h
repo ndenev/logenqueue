@@ -25,36 +25,17 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef LOGENQUEUE_H_INCLUDED
-#define LOGENQUEUE_H_INCLUDED
+#ifndef AMQP_H_INCLUDED
+#define AMQP_H_INCLUDED
 
-#include <limits.h>
+//#include <amqp.h>
+//#include <amqp_framing.h>
 
-struct syslog_thr_dat {
-	int     id;
-	u_int	mc;
-	u_int	old_mc;
-	pthread_mutex_t stat_mtx;
-	struct dnscache *cache;
+struct amqp_state_t {
+        amqp_connection_state_t conn;
+        amqp_basic_properties_t props;
 };
 
-struct gelf_thr_dat {
-	int     id;
-	u_int	mc;
-	u_int	old_mc;
-	pthread_mutex_t stat_mtx;
-	struct dnscache *cache;
-};
-
-struct thr_dat {
-	struct syslog_thr_dat *syslog;
-	struct gelf_thr_dat *gelf;
-};
-
-static const char gelf_magic[3][2] = {
-	{ 0x78, 0x9c },
-	{ 0x1f, 0x8b },
-	{ 0x1e, 0x0f },
-};
+int amqp_link(struct amqp_state_t *amqp);
 
 #endif
