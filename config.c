@@ -137,7 +137,7 @@ parse_opts(int *argc, char ***argv)
 	};
 
         while ((opt = getopt_long(*argc, *argv,
-                                "c:dhv", longopts, NULL)) != -1) {
+                                "c:dhsv", longopts, NULL)) != -1) {
                 switch (opt) {
                         case 'c':
 				strncpy(config_file, optarg, MAXPATHLEN);
