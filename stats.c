@@ -102,10 +102,11 @@ message_stats(void *arg)
 		pthread_rwlock_unlock(cache->lock);
 
 		if (stats) {
-			LOG("dns cache size : %d/%d\n", cache_size, DNSCACHESIZE);
-			LOG("dns cache hit  : %d/sec\n", cache_hits / STATS_TIMEOUT);
-			LOG("dns cache miss : %d/sec\n", cache_miss / STATS_TIMEOUT);
-			LOG("dns cache full : %d\n", cache_full);
+			LOG("dns cache size: [%d/%d] hit/miss:[%d/%d] full:[%d]\n",
+				cache_size, DNSCACHESIZE,
+				cache_hits / STATS_TIMEOUT,
+				cache_miss / STATS_TIMEOUT,
+				cache_full);
 		}
 
 		for (i = 0; i < cfg.syslog.workers; i++) {
@@ -136,9 +137,8 @@ message_stats(void *arg)
 		mc = mcs + mcg;
 
 		if (stats) {
-			LOG("msg rate total  : %d msg/sec\n", mc);
-			LOG("msg rate syslog : %d msg/sec\n", mcs);
-			LOG("msg rate gelf   : %d msg/sec\n", mcg);
+			LOG("log msg rate:  %d gelf / %d syslog / %d total\n",
+				mcg, mcs, mc);
 			LOG("\n");
 		}
 
