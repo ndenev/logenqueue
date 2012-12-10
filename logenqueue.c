@@ -99,7 +99,7 @@ message_stats(void *arg)
 		ts.tv_sec = tv.tv_sec + STATS_TIMEOUT;
 		ts.tv_nsec = 0;
 		pthread_mutex_lock(&dummy);
-		i = pthread_cond_timedwait(&stats_nap, &dummy, &ts);
+		pthread_cond_timedwait(&stats_nap, &dummy, &ts);
 		pthread_mutex_unlock(&dummy);
 		if (dying) {
 			pthread_exit(NULL);
