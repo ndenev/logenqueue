@@ -473,7 +473,9 @@ gelf_worker(void *arg)
 			LOG("chunked_gelf: size: %d msg_id:%lu msg_seq_num:%u msg_chunks:%u\n",
 				r, msg_id, msg_seq_num, msg_chunks);
 
-			if (msg_chunks > 128) {
+			// XXX: drop broken gelf messages for now, possible false positives but unlikely	
+			//if (msg_chunks > 128) {
+			if (msg_chunks > 10) {
 				LOG("chunked gelf chunks too much!\n");
 				continue;
 			}
