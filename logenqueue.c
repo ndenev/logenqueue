@@ -188,10 +188,10 @@ message_stats(void *arg)
 		pthread_rwlock_unlock(cache->lock);
 
 		if (stats) {
-			DEBUG("dns cache size : %d/%d\n", cache_size, DNSCACHESIZE);
-			DEBUG("dns cache hit  : %d/sec\n", cache_hits / STATS_TIMEOUT);
-			DEBUG("dns cache miss : %d/sec\n", cache_miss / STATS_TIMEOUT);
-			DEBUG("dns cache full : %d\n", cache_full);
+			LOG("dns cache size : %d/%d\n", cache_size, DNSCACHESIZE);
+			LOG("dns cache hit  : %d/sec\n", cache_hits / STATS_TIMEOUT);
+			LOG("dns cache miss : %d/sec\n", cache_miss / STATS_TIMEOUT);
+			LOG("dns cache full : %d\n", cache_full);
 		}
 
 		for (i = 0; i < cfg.syslog.workers; i++) {
@@ -222,10 +222,10 @@ message_stats(void *arg)
 		mc = mcs + mcg;
 
 		if (stats) {
-		VERBOSE("msg rate total  : %d msg/sec\n", mc);
-		VERBOSE("msg rate syslog : %d msg/sec\n", mcs);
-		VERBOSE("msg rate gelf   : %d msg/sec\n", mcg);
-		VERBOSE("\n");
+			LOG("msg rate total  : %d msg/sec\n", mc);
+			LOG("msg rate syslog : %d msg/sec\n", mcs);
+			LOG("msg rate gelf   : %d msg/sec\n", mcg);
+			LOG("\n");
 		}
 
 #if __FreeBSD__ || __linux__
@@ -429,6 +429,9 @@ gelf_worker(void *arg)
 	u_char	buf[GELF_BUF];
 	int	r;
 	int	q;
+	u_int64_t msg_id;
+	u_int8_t msg_seq_num;
+	u_int8_t msg_chunks;
 
 	//DEBUG("gelf worker thread #%d started\n", self->id);
 
@@ -452,36 +455,67 @@ gelf_worker(void *arg)
 		pthread_mutex_lock(&self->stat_mtx);
 		self->mc++;
 		pthread_mutex_unlock(&self->stat_mtx);
-#define	GELF_MAGIC(type) bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
 
-		if (!GELF_MAGIC(ZLIBD)) {
+#define	GELF_MAGIC(buf, type) bcmp(buf, gelf_magic[type], sizeof(gelf_magic[type]))
+
+		if (!GELF_MAGIC(buf, ZLIBD)) {
 			//DEBUG("Received ZLIB'd GELF message.\n");
-		} else if (!GELF_MAGIC(GZIPD)) {
+		} else if (!GELF_MAGIC(buf, GZIPD)) {
 			//DEBUG("Received GZIP'd GELF message.\n");
-		} else if (!GELF_MAGIC(CHUNKD)) {
+		} else if (!GELF_MAGIC(buf, CHUNKD)) {
 			trytogetrdns(&self->stat_mtx, &from, host, self->cache);
-			u_char *msg_ptr;	
-			u_int64_t *msg_id;
-			u_int8_t *msg_seq_num;
-			u_int8_t *msg_chunks;
-			/* skip over chunked gelf magic */
-			msg_ptr = buf+2;
-			msg_id = (u_int64_t *)msg_ptr;
-			msg_ptr = buf+10;
-			msg_seq_num = (u_int8_t *)msg_ptr;
-			msg_ptr = buf+11;
-			msg_chunks = (u_int8_t *)msg_ptr;
-			LOG("Received CHUNKED GELF message from (%s). It's not supported currently!\n",
-				host);
+			/* skip over chunked gelf magic and parse header */
+			bcopy(buf+2, &msg_id, 8);
+			bcopy(buf+10, &msg_seq_num, 1);
+			bcopy(buf+11, &msg_chunks, 1);
+
+			LOG("Received CHUNKED GELF message from (%s)\n", host);
 			LOG("chunked_gelf: size: %d msg_id:%lu msg_seq_num:%u msg_chunks:%u\n",
 				r, msg_id, msg_seq_num, msg_chunks);
-			int i;
-			for (i=0; i<r-1; i++) {
-				if (buf[i] == '\0')
-					buf[i] = '_';
+
+			if (msg_chunks > 128) {
+				LOG("chunked gelf chunks too much!\n");
+				continue;
 			}
-			LOG("msg: %s\n", buf);
-			continue;
+
+			if (msg_seq_num > 127) {
+				LOG("chunked gelf seq number too big\n");
+				continue;
+			}
+
+			/* check chunked gelf inner header magic */
+			/* unfortunately we can do this only on the first msg */
+			if (msg_seq_num == 0) {
+				if (!GELF_MAGIC(buf+12, ZLIBD)) {
+					LOG("ZLIBD CHUNKED GELF\n");
+				} else if (!GELF_MAGIC(buf+13, GZIPD)) {
+					LOG("GZIPD CHUNKED GELF\n");
+				} else {
+					LOG("BAD CHUNKED GELF?\n");
+					continue;
+				}
+			}
+
+#if 0
+			int i;
+			int l = 1;
+			for (i=0; i<r; i++) {
+				printf("%2x ", buf[i]);
+				if (l++ == 20) {
+					printf("\n");
+					l = 1;
+				}
+			}
+			printf("\n");
+			for (i=0; i<r; i++) {
+				printf("%c", buf[i]);
+				if (l++ == 20) {
+					printf("\n");
+					l = 1;
+				}
+			}
+			printf("\n");
+#endif
 		} else {
 			trytogetrdns(&self->stat_mtx, &from, host, self->cache);
 			LOG("Received message with unknown GELF type from (%s). Maybe RAW? Bailing out.\n",
