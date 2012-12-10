@@ -75,7 +75,7 @@
 pthread_cond_t	stats_nap;
 volatile int dying = 0;
 
-void
+static void
 message_stats(void *arg)
 {
 	struct	thr_dat *workers_data = (struct thr_dat *)arg;
@@ -165,13 +165,13 @@ message_stats(void *arg)
 	};
 }
 
-void
+static void
 reload(int sig)
 {
 	LOG("Here goes code to reload the config\n");
 }
 
-void
+static void
 die(int sig)
 {
 	VERBOSE("Got shutdown request, waiting threads to finish\n");
