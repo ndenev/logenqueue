@@ -6,7 +6,7 @@ RM = /bin/rm -f
 
 LIBS = -lrabbitmq -lz -lpthread
 
-OBJS = logenqueue.o config.o dnscache.o gelf.o syslog.o amqp.o
+OBJS = logenqueue.o config.o dnscache.o gelf.o syslog.o amqp.o stats.o
 PROG = logenqueue
 
 all: $(PROG)
