@@ -25,29 +25,18 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <arpa/inet.h>
-#include <ctype.h>
-#include <err.h>
 #include <errno.h>
 #include <netinet/in.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/param.h>
-#include <sys/select.h>
 #include <sys/socket.h>
 #include <time.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <netdb.h>
-#include <math.h>
 #include <pthread.h>
-#if __FreeBSD__
-#include <pthread_np.h>
-#endif
 
 #include <amqp.h>
 #include <amqp_framing.h>
