@@ -73,7 +73,7 @@
 void
 gelf_worker(void *arg)
 {
-	struct gelf_thr_dat *self = (struct gelf_thr_dat *)arg;
+	struct	thr_data *self = (struct thr_data *)arg;
 
 	struct  amqp_state_t amqp;
 	struct  sockaddr from;

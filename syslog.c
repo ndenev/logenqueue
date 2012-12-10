@@ -146,7 +146,7 @@ parse_syslog_prio(char *msg, int *prio)
 void
 syslog_worker(void *arg)
 {
-	struct	syslog_thr_dat *self = (struct syslog_thr_dat *)arg;
+	struct	thr_data *self = (struct thr_data *)arg;
 
 	struct	amqp_state_t amqp;
 	struct  sockaddr from;

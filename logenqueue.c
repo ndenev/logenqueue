@@ -145,9 +145,8 @@ main(int argc, char **argv)
 	pthread_t	dnscache_cleaner;
 	pthread_t	*syslog_workers;
 	pthread_t	*gelf_workers;
-	struct thr_dat	 	 workers_data;
-	struct syslog_thr_dat	*stp;
-	struct gelf_thr_dat	*gtp;
+	struct all_thr_data	workers_data;
+	struct thr_data		*stp, *gtp;
 	struct dnscache		dnscache;
 	pthread_rwlock_t	dnscache_lock;
 	char	tname[17];
@@ -207,9 +206,9 @@ main(int argc, char **argv)
 	gelf_workers = calloc(cfg.gelf.workers, sizeof(pthread_t));
 
 	workers_data.syslog = calloc(cfg.syslog.workers,
-					sizeof(struct syslog_thr_dat));
+					sizeof(struct thr_data));
 	workers_data.gelf  = calloc(cfg.gelf.workers,
-					sizeof(struct gelf_thr_dat));
+					sizeof(struct thr_data));
 
 	pthread_rwlock_init(&dnscache_lock, NULL);
 	memset(&dnscache, 0, sizeof(dnscache));
