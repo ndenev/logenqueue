@@ -29,9 +29,14 @@
 #define COMMON_H_INCLUDED
 
 /* global vars */
-extern int debug;
+extern int dontfork;
 extern int verbose;
+extern int stats;
 extern volatile int dying;
 extern struct  config  cfg;
+
+#define LOG(...)        printf(__VA_ARGS__)
+#define DEBUG(...)      if (verbose>1) printf(__VA_ARGS__)
+#define VERBOSE(...)    if (verbose>0) printf(__VA_ARGS__)
 
 #endif

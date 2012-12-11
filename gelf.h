@@ -25,30 +25,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef DNSCACHE_H_INCLUDED
-#define DNSCACHE_H_INCLUDED
+#ifndef GELF_H_INCLUDED
+#define GELF_H_INCLUDED
 
-#include <limits.h>
+void gelf_worker(void *arg);
 
-#define DNSCACHESIZE 4096
-#define DNSCACHETTL 300
-struct dnscache_entry {
-        u_int32_t       from;
-        char    host[_POSIX_HOST_NAME_MAX+1];
-        int     ts;
-};
-
-struct dnscache {
-        struct  dnscache_entry entry[DNSCACHESIZE];
-        int     size;
-        int     hit;
-        int     miss;
-        int     full;
-        pthread_rwlock_t *lock;
-};
-
-
-void trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struct dnscache *cache);
-void dnscache_expire(void *arg);
 
 #endif

@@ -38,11 +38,14 @@
 #define CONFIG_FILE "logenqueue.conf"
 #endif
 
+#define MAXVERBOSE 3
+
 char    config_file[MAXPATHLEN] = CONFIG_FILE;
 struct config cfg;
 
-int     debug = 0;
+int     dontfork = 0;
 int     verbose = 0;
+int	stats = 0;
 
 int parse_config()
 {
@@ -106,10 +109,16 @@ void
 usage()
 {
 	printf("logenqueue [-dv] [-c /path/to/config.file]\n");
-	printf("	-c 	--conf		specify config file to use\n");
-	printf("	-d	--debug		enable debug mode\n");
-	printf("	-h	--help		this help screen\n");
-	printf("	-v	--verbose	enable verbose mode\n");
+	printf("	-c 	--conf");
+	printf("		specify config file to use\n");
+	printf("	-d	--dontfork");
+	printf("	stay in foreground\n");
+	printf("	-h	--help");
+	printf("		this help screen\n");
+	printf("	-s	--stats");	
+	printf("		show stats in foreground  mode\n");
+	printf("	-v	--verbose");
+	printf("	verbose mode, can be specified multiple times\n");
 	exit(0);
 }
 
@@ -120,21 +129,25 @@ parse_opts(int *argc, char ***argv)
 
 	static struct option longopts[] = {
 		{ "conf",	required_argument,	NULL,	'c' },
-		{ "debug",	no_argument,		NULL,	'd' },
+		{ "dontfork",	no_argument,		NULL,	'd' },
 		{ "help",	no_argument,		NULL,	'h' },
+		{ "stats",	no_argument,		NULL,	's' },
 		{ "verbose",	no_argument,		NULL,	'v' },
 		{ NULL,		0,			NULL,	0 },
 	};
 
         while ((opt = getopt_long(*argc, *argv,
-                                "c:dhv", longopts, NULL)) != -1) {
+                                "c:dhsv", longopts, NULL)) != -1) {
                 switch (opt) {
                         case 'c':
 				strncpy(config_file, optarg, MAXPATHLEN);
                                 break;
                         case 'd':
-                                debug++;
+                                dontfork = 1;
                                 break;
+			case 's':
+				stats = 1;
+				break;
                         case 'v':
                                 verbose++;
                                 break;

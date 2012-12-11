@@ -30,28 +30,7 @@
 
 #include <limits.h>
 
-#define LOG(...)	printf(__VA_ARGS__)
-#define DEBUG(...)      if (debug>0) printf(__VA_ARGS__)
-#define VERBOSE(...)    if (verbose>0) printf(__VA_ARGS__)
-
-#define DNSCACHESIZE 4096
-#define DNSCACHETTL 300
-struct dnscache_entry {
-	u_int32_t       from;
-        char    host[_POSIX_HOST_NAME_MAX+1];
-        int     ts;
-};
-
-struct dnscache {
-        struct  dnscache_entry entry[DNSCACHESIZE];
-        int     size;
-        int     hit;
-        int     miss;
-        int     full;
-	pthread_rwlock_t *lock;
-};
-
-struct syslog_thr_dat {
+struct thr_data {
 	int     id;
 	u_int	mc;
 	u_int	old_mc;
@@ -59,27 +38,15 @@ struct syslog_thr_dat {
 	struct dnscache *cache;
 };
 
-struct gelf_thr_dat {
-	int     id;
-	u_int	mc;
-	u_int	old_mc;
-	pthread_mutex_t stat_mtx;
-};
-
-struct thr_dat {
-	struct syslog_thr_dat *syslog;
-	struct gelf_thr_dat *gelf;
+struct all_thr_data {
+	struct thr_data *syslog;
+	struct thr_data *gelf;
 };
 
 static const char gelf_magic[3][2] = {
 	{ 0x78, 0x9c },
 	{ 0x1f, 0x8b },
 	{ 0x1e, 0x0f },
-};
-
-struct amqp_state_t {
-	amqp_connection_state_t conn;
-	amqp_basic_properties_t props;
 };
 
 #endif

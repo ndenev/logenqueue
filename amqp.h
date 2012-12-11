@@ -25,30 +25,17 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef DNSCACHE_H_INCLUDED
-#define DNSCACHE_H_INCLUDED
+#ifndef AMQP_H_INCLUDED
+#define AMQP_H_INCLUDED
 
-#include <limits.h>
+//#include <amqp.h>
+//#include <amqp_framing.h>
 
-#define DNSCACHESIZE 4096
-#define DNSCACHETTL 300
-struct dnscache_entry {
-        u_int32_t       from;
-        char    host[_POSIX_HOST_NAME_MAX+1];
-        int     ts;
+struct amqp_state_t {
+        amqp_connection_state_t conn;
+        amqp_basic_properties_t props;
 };
 
-struct dnscache {
-        struct  dnscache_entry entry[DNSCACHESIZE];
-        int     size;
-        int     hit;
-        int     miss;
-        int     full;
-        pthread_rwlock_t *lock;
-};
-
-
-void trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struct dnscache *cache);
-void dnscache_expire(void *arg);
+int amqp_link(struct amqp_state_t *amqp);
 
 #endif
