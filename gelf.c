@@ -124,7 +124,7 @@ gelf_worker(void *arg)
 			bcopy(buf+11, &msg_chunks, 1);
 
 			LOG("Received CHUNKED GELF message from (%s)\n", host);
-			LOG("chunked_gelf: size: %d msg_id:%lu msg_seq_num:%u msg_chunks:%u\n",
+			LOG("chunked_gelf: size: %d msg_id:%Lu msg_seq_num:%u msg_chunks:%u\n",
 				r, msg_id, msg_seq_num, msg_chunks);
 
 			// XXX: drop broken gelf messages for now, possible false positives but unlikely	

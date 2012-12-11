@@ -88,20 +88,20 @@ message_stats(void *arg)
 			pthread_exit(NULL);
 		}
 
-		mc = mcs = mcg = 0;
-		cache_hits = cache_miss = cache_full = cache_size = 0;
-
-		/* get dns cache stats */
-		pthread_rwlock_wrlock(cache->lock);
-		cache_hits	= cache->hit;
-		cache_miss	= cache->miss;
-		cache_full	= cache->full;
-		cache_size	= cache->size;
-		cache->hit = 0;
-		cache->miss = 0;
-		pthread_rwlock_unlock(cache->lock);
+		mcs	= 0;
+		mcg	= 0;
 
 		if (stats) {
+			/* get dns cache stats */
+			pthread_rwlock_wrlock(cache->lock);
+			cache_hits	= cache->hit;
+			cache_miss	= cache->miss;
+			cache_full	= cache->full;
+			cache_size	= cache->size;
+			cache->hit	= 0;
+			cache->miss	= 0;
+			pthread_rwlock_unlock(cache->lock);
+
 			LOG("dns cache size: [%d/%d] hit/miss:[%d/%d] full:[%d]\n",
 				cache_size, DNSCACHESIZE,
 				cache_hits / STATS_TIMEOUT,
@@ -124,6 +124,7 @@ message_stats(void *arg)
 		for (i = 0; i < cfg.gelf.workers; i++) {
 			gtp = &workers_data->gelf[i];
 			pthread_mutex_lock(&gtp->stat_mtx);
+			/* get message count stats and detect wraps */
 			if (gtp->mc >= gtp->old_mc) {
 				mcg += gtp->mc - gtp->old_mc;
 				gtp->old_mc = gtp->mc;
