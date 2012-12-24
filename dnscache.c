@@ -62,7 +62,7 @@
  * or if it fails returns the IP.
  * The result is cached.
  */
-void
+void __inline
 trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struct dnscache *cache)
 {
 	struct	hostent *hp = NULL;
