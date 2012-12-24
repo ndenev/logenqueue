@@ -54,38 +54,37 @@
 
 #define SYSLOG_BUF 65535
 
-static const char *f2s[] = {
-	"kernel",
-	"user-level",
-	"mail",
-	"system daemon",
-	"security/authorization",
-	"syslogd",
-	"lpr",
-	"network news",
-	"uucp",
-	"clock",
-	"security/authorization",
-	"ftp",
-	"ntp",
-	"log audit",
-	"log alert",
-	"clock",
-	"local0",
-	"local1",
-	"local2",
-	"local3",
-	"local4",
-	"local5",
-	"local6",
-	"local7",
-	"GELF",
-	NULL
-};
-
-static const char *
+static __inline const char *
 fac2str(int facility)
 {
+	static const char *f2s[] = {
+		"kernel",
+		"user-level",
+		"mail",
+		"system daemon",
+		"security/authorization",
+		"syslogd",
+		"lpr",
+		"network news",
+		"uucp",
+		"clock",
+		"security/authorization",
+		"ftp",
+		"ntp",
+		"log audit",
+		"log alert",
+		"clock",
+		"local0",
+		"local1",
+		"local2",
+		"local3",
+		"local4",
+		"local5",
+		"local6",
+		"local7",
+		"GELF",
+		NULL
+	};
 
 	if (facility > 0 && facility < 23)
 		return (f2s[facility]);
@@ -98,7 +97,7 @@ fac2str(int facility)
  * escaping chars that must be escaped in json (no shit?)
  * these are backslashes, quotes, and special chars.
  */
-static int
+static __inline int
 json_escape(char *dst, char *src, int dst_len)
 {
 	int dst_idx = 0;
@@ -131,7 +130,7 @@ json_escape(char *dst, char *src, int dst_len)
  * int pointed by the prio argument.
  * On invalid syslog message it will return NULL.
  */
-static char *
+static __inline char *
 parse_syslog_prio(char *msg, int *prio)
 {
 #define SL_PRI_MIN 0
