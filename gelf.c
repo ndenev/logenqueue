@@ -63,13 +63,6 @@
 #include <zlib.h>
 #endif
 
-#define STATS_TIMEOUT 5
-#define	ZLIBD	0
-#define	GZIPD	1
-#define	CHUNKD	2
-
-#define GELF_BUF 65535
-
 void
 gelf_worker(void *arg)
 {

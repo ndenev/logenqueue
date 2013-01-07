@@ -28,6 +28,13 @@
 #ifndef GELF_H_INCLUDED
 #define GELF_H_INCLUDED
 
+#define STATS_TIMEOUT 5
+#define ZLIBD   0
+#define GZIPD   1
+#define CHUNKD  2
+
+#define GELF_BUF 65535
+
 void gelf_worker(void *arg);
 
 
