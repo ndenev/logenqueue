@@ -126,6 +126,8 @@ gelf_worker(void *arg)
 			LOG("Received CHUNKED GELF message from (%s)\n", host);
 			LOG("chunked_gelf: size: %d msg_id:%Lu msg_seq_num:%u msg_chunks:%u\n",
 				r, msg_id, msg_seq_num, msg_chunks);
+			LOG("Chunked GELF is not supported currently! Dropping the message!\n");
+			continue;
 
 			// XXX: drop broken gelf messages for now, possible false positives but unlikely	
 			//if (msg_chunks > 128) {
