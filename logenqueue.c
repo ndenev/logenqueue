@@ -141,13 +141,15 @@ main(int argc, char **argv)
 	int	pid;
 	int	i;
 	struct	amqp_state_t amqp;
+	pthread_attr_t	tattr;
 	pthread_t	stats_thread;
 	pthread_t	dnscache_cleaner;
 	pthread_t	*syslog_workers;
 	pthread_t	*gelf_workers;
-	struct all_thr_data	workers_data;
-	struct thr_data		*stp, *gtp;
-	struct dnscache		dnscache;
+	struct all_thr_data_t	workers_data;
+	struct thr_data_t	*stp;
+	struct thr_data_t	*gtp;
+	struct dnscache_t	dnscache;
 	pthread_rwlock_t	dnscache_lock;
 	char	tname[17];
 	amqp_rpc_reply_t r;
@@ -206,9 +208,9 @@ main(int argc, char **argv)
 	gelf_workers = calloc(cfg.gelf.workers, sizeof(pthread_t));
 
 	workers_data.syslog = calloc(cfg.syslog.workers,
-					sizeof(struct thr_data));
+					sizeof(struct thr_data_t));
 	workers_data.gelf  = calloc(cfg.gelf.workers,
-					sizeof(struct thr_data));
+					sizeof(struct thr_data_t));
 
 	pthread_rwlock_init(&dnscache_lock, NULL);
 	memset(&dnscache, 0, sizeof(dnscache));

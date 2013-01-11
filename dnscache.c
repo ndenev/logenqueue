@@ -63,7 +63,7 @@
  * The result is cached.
  */
 void __inline
-trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struct dnscache *cache)
+trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struct dnscache_t *cache)
 {
 	struct	hostent *hp = NULL;
 	void	*src = from->sa_data+2;
@@ -127,7 +127,7 @@ trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struc
 		cache->full++;
 	} else {
 		if (cache->entry[oldest_idx].ts == 0)
-			cache->size++;	
+			cache->size++;
 
 		cache->entry[oldest_idx].from = *(u_int32_t *)src;
 		strncpy(cache->entry[oldest_idx].host, host, _POSIX_HOST_NAME_MAX);
@@ -139,7 +139,7 @@ trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struc
 void
 dnscache_expire(void *arg)
 {
-	struct dnscache *cache = (struct dnscache *)arg;
+	struct dnscache_t *cache = (struct dnscache_t *)arg;
 	int i;
 	int oldest_ts;
 	int now;

@@ -62,9 +62,9 @@ pthread_cond_t	stats_nap;
 void
 message_stats(void *arg)
 {
-	struct	all_thr_data *workers_data = (struct all_thr_data *)arg;
-	struct	dnscache *cache = workers_data->syslog->cache;
-	struct	thr_data *stp, *gtp;
+	struct	all_thr_data_t *workers_data = (struct all_thr_data_t *)arg;
+	struct	dnscache_t *cache = workers_data->syslog->cache;
+	struct	thr_data_t *stp, *gtp;
 	int	i;
 	u_int	mc;		/* message count */
 	u_int	mcs;		/* message count syslog */

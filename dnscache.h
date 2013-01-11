@@ -32,14 +32,14 @@
 
 #define DNSCACHESIZE 4096
 #define DNSCACHETTL 300
-struct dnscache_entry {
+struct dnscache_entry_t {
         u_int32_t       from;
         char    host[_POSIX_HOST_NAME_MAX+1];
         int     ts;
 };
 
-struct dnscache {
-        struct  dnscache_entry entry[DNSCACHESIZE];
+struct dnscache_t {
+        struct  dnscache_entry_t entry[DNSCACHESIZE];
         int     size;
         int     hit;
         int     miss;
@@ -48,7 +48,7 @@ struct dnscache {
 };
 
 
-void trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struct dnscache *cache);
+void trytogetrdns(pthread_mutex_t *stat_mtx, struct sockaddr *from, char *host, struct dnscache_t *cache);
 void dnscache_expire(void *arg);
 
 #endif

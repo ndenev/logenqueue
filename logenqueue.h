@@ -30,17 +30,17 @@
 
 #include <limits.h>
 
-struct thr_data {
+struct thr_data_t {
 	int     id;
 	u_int	mc;
 	u_int	old_mc;
 	pthread_mutex_t stat_mtx;
-	struct dnscache *cache;
+	struct dnscache_t *cache;
 };
 
-struct all_thr_data {
-	struct thr_data *syslog;
-	struct thr_data *gelf;
+struct all_thr_data_t {
+	struct thr_data_t *syslog;
+	struct thr_data_t *gelf;
 };
 
 static const char gelf_magic[3][2] = {
