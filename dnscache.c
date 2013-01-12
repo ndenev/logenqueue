@@ -146,8 +146,10 @@ dnscache_expire(void *arg)
 
 	oldest_ts = DNSCACHETTL;
 
+    DEBUG("dnscache cleaner thread starting\n");
+
 	for (;;) {
-		//DEBUG("dnscache cleaner thread sleeping for %d secs\n", oldest_ts);
+		DEBUG("dnscache cleaner thread sleeping for %d secs\n", oldest_ts);
 		sleep(oldest_ts);
 		if (dying) {
 			pthread_exit(NULL);
@@ -159,7 +161,7 @@ dnscache_expire(void *arg)
 				continue;
 			/* purge old entry */
 			if (cache->entry[i].ts < now - DNSCACHETTL) {
-				//DEBUG("purging entry: %s\n", cache->entry[i].host);
+				DEBUG("dnscache cleaner thread purging entry: %s\n", cache->entry[i].host);
 				cache->entry[i].ts = 0;
 				cache->entry[i].from = 0;
 				cache->entry[i].host[0] = '\0';

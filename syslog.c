@@ -167,7 +167,7 @@ syslog_worker(void *arg)
 #endif
 	u_char	in[SYSLOG_BUF*3];
 
-	//DEBUG("syslog worker thread #%d started\n", self->id);
+	DEBUG("syslog worker thread #%d started\n", self->id);
 
 	if (amqp_link(&amqp) < 0) {
 		LOG("can't connect to amqp from syslog thr #%d\n", self->id);
@@ -180,6 +180,7 @@ syslog_worker(void *arg)
 		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf),
 				MSG_WAITALL, &from, &ip_len);
 		if (dying) {
+            DEBUG("syslog worker thread #%d terminating\n", self->id);
 			pthread_exit(NULL);
 		}
 		if (r < 0) {

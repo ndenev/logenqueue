@@ -80,7 +80,7 @@ gelf_worker(void *arg)
 	u_int8_t msg_seq_num;
 	u_int8_t msg_chunks;
 
-	//DEBUG("gelf worker thread #%d started\n", self->id);
+	DEBUG("gelf worker thread #%d started\n", self->id);
 
 	if (amqp_link(&amqp) < 0) {
 		LOG("can't connect to amqp from gelf thr #%d\n", self->id);
@@ -93,6 +93,7 @@ gelf_worker(void *arg)
 		r = recvfrom(cfg.gelf.fd, buf, sizeof(buf),
 				MSG_WAITALL, &from, &ip_len);
 		if (dying) {
+            DEBUG("gelf worker thread #%d terminating\n", self->id);
 			pthread_exit(NULL);
 		}
 		if (r < 0) {
