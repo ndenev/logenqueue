@@ -142,18 +142,18 @@ dnscache_expire(void *arg)
 	struct dnscache_t *cache = (struct dnscache_t *)arg;
 	int i;
 	int oldest_ts;
-    int tosleep;
+	int tosleep;
 	int now;
 
-    oldest_ts = tosleep = DNSCACHETTL;
+	oldest_ts = tosleep = DNSCACHETTL;
 
-    DEBUG("dnscache cleaner thread starting\n");
+	DEBUG("dnscache cleaner thread starting\n");
 
 	for (;;) {
 		DEBUG("dnscache cleaner thread sleeping for %d secs\n", tosleep);
 		sleep(tosleep);
 		if (dying) {
-            DEBUG("dnscache cleaner thread terminating\n");
+		DEBUG("dnscache cleaner thread terminating\n");
 			pthread_exit(NULL);
 		}
 		pthread_rwlock_wrlock(cache->lock);

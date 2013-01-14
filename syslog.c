@@ -180,7 +180,7 @@ syslog_worker(void *arg)
 		r = recvfrom(cfg.syslog.fd, buf, sizeof(buf),
 				MSG_WAITALL, &from, &ip_len);
 		if (dying) {
-            DEBUG("syslog worker thread #%d terminating\n", self->id);
+			DEBUG("syslog worker thread #%d terminating\n", self->id);
 			pthread_exit(NULL);
 		}
 		if (r < 0) {

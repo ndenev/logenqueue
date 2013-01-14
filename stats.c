@@ -77,7 +77,7 @@ message_stats(void *arg)
 	pthread_mutex_init(&dummy, NULL);
 	pthread_cond_init(&stats_nap, NULL);
 
-    DEBUG("stats thread starting\n");
+	DEBUG("stats thread starting\n");
 
 	for (;;) {
 		gettimeofday(&tv, NULL);
@@ -87,7 +87,7 @@ message_stats(void *arg)
 		pthread_cond_timedwait(&stats_nap, &dummy, &ts);
 		pthread_mutex_unlock(&dummy);
 		if (dying) {
-            DEBUG("stats thread terminating\n");
+			DEBUG("stats thread terminating\n");
 			pthread_exit(NULL);
 		}
 

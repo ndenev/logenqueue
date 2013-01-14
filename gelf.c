@@ -93,7 +93,7 @@ gelf_worker(void *arg)
 		r = recvfrom(cfg.gelf.fd, buf, sizeof(buf),
 				MSG_WAITALL, &from, &ip_len);
 		if (dying) {
-            DEBUG("gelf worker thread #%d terminating\n", self->id);
+			DEBUG("gelf worker thread #%d terminating\n", self->id);
 			pthread_exit(NULL);
 		}
 		if (r < 0) {
