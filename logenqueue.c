@@ -141,7 +141,7 @@ main(int argc, char **argv)
 	int	pid;
 	int	i;
 	struct	amqp_state_t amqp;
-	pthread_attr_t	tattr;
+	//pthread_attr_t	tattr;
 	pthread_t	stats_thread;
 	pthread_t	dnscache_cleaner;
 	pthread_t	*syslog_workers;
@@ -149,8 +149,8 @@ main(int argc, char **argv)
 	struct all_thr_data_t	workers_data;
 	struct thr_data_t	*stp;
 	struct thr_data_t	*gtp;
-	struct dnscache_t	dnscache;
-	pthread_rwlock_t	dnscache_lock;
+	struct dnscache_t	*dnscache;
+	pthread_rwlock_t	*dnscache_lock;
 	char	tname[17];
 	amqp_rpc_reply_t r;
 
@@ -212,15 +212,17 @@ main(int argc, char **argv)
 	workers_data.gelf  = calloc(cfg.gelf.workers,
 					sizeof(struct thr_data_t));
 
-	pthread_rwlock_init(&dnscache_lock, NULL);
-	memset(&dnscache, 0, sizeof(dnscache));
-	dnscache.lock = &dnscache_lock;
+	dnscache_lock = calloc(1, sizeof(pthread_rwlock_t));
+	pthread_rwlock_init(dnscache_lock, NULL);
+
+	dnscache = calloc(1, sizeof(struct dnscache_t));
+	dnscache->lock = dnscache_lock;
 
 	/* create syslog workers */
 	for (i = 0; i < cfg.syslog.workers; i++) {
 		stp = &workers_data.syslog[i];
 		stp->id = i;
-		stp->cache = &dnscache;
+		stp->cache = dnscache;
 		pthread_mutex_init(&stp->stat_mtx, NULL);
 		pthread_create(&syslog_workers[i], NULL,
 				(void *)&syslog_worker, stp);
@@ -234,7 +236,7 @@ main(int argc, char **argv)
 	for (i = 0; i < cfg.gelf.workers; i++) {
 		gtp = &workers_data.gelf[i];
 		gtp->id = i;
-		gtp->cache = &dnscache;
+		gtp->cache = dnscache;
 		pthread_mutex_init(&gtp->stat_mtx, NULL);
 		pthread_create(&gelf_workers[i], NULL,
 				(void *)&gelf_worker, gtp);
@@ -254,7 +256,7 @@ main(int argc, char **argv)
 
 	/* create dnscache purge thread */
 	pthread_create(&dnscache_cleaner, NULL,
-			(void *)&dnscache_expire, &dnscache);
+			(void *)&dnscache_expire, dnscache);
 
 	snprintf(tname, sizeof(tname), "dns_cleaner[]");
 #if __FreeBSD__
